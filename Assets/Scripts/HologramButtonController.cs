@@ -818,5 +818,45 @@ public class HologramButtonController : MonoBehaviour
             }
         }
     }
+
+    /// <summary>
+    /// Force-resets all optical luminance baselines, clears occlusion/press latching,
+    /// returns mechanical cap/badge transforms to initial positions, and un-sticks state machines.
+    /// </summary>
+    public void ResetBaselinesAndSensors()
+    {
+        refBaselineLuminance = -1f;
+        refLuminanceDrop = 0f;
+        lastPressTime = -1f;
+
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            var btn = buttons[i];
+            btn.baselineLuminance = -1f; // Force fresh baseline sampling on next camera frame
+            btn.luminanceDrop = 0f;
+            btn.netContrast = 0f;
+            btn.triggerFrames = 0;
+            btn.isOccluded = false;
+            btn.state = VirtualButtonRig.ButtonState.Idle;
+
+            if (btn.buttonCap != null)
+            {
+                btn.buttonCap.localPosition = btn.initialCapLocalPos;
+            }
+            if (btn.floatingBadge != null)
+            {
+                btn.floatingBadge.localPosition = btn.initialBadgeLocalPos;
+            }
+
+            UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
+        }
+
+        if (audioSynthesizer != null)
+        {
+            audioSynthesizer.PlayRelayClick(0.40f);
+        }
+
+        Debug.Log("[HologramButtonController] Optical baselines and button states cleanly reset.");
+    }
     #endregion
 }

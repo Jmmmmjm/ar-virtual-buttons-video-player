@@ -1,7 +1,7 @@
 ================================================================================
 === AR HOLOGRAM VIDEO MONITOR & VIRTUAL BUTTONS: COMPREHENSIVE SELF-AUDIT ===
 ================================================================================
-Audit Timestamp: 2026-09-11 23:09:42
+Audit Timestamp: 2026-09-11 23:19:38
 
 --- SECTION 1: ASSET, VIDEO & SHADER INTEGRITY ---
   [1.1] ImageTarget Texture (Assets/postcard.png): PASS (Found)
@@ -29,8 +29,8 @@ Audit Timestamp: 2026-09-11 23:09:42
   [3.5] HologramButtonController: PASS (Configured with multi-tier optical & touch input)
   [3.6] Interactive Button Energy Conduits: PASS (3 LineRenderer conduits connecting buttons to center mandala)
   [3.7] Expanding Shockwave Geometry: PASS (3 shockwave quads positioned at buttons for ripple burst feedback)
-  [3.8] Schmitt Trigger Hysteresis: PASS (T_high=24 LSB, T_low=12 LSB, Dead-Band=12 LSB >= 8 LSB)
-  [3.9] Progressive Hover Hierarchy: PASS (Approach: 8 < Hover: 16 < Press: 24 LSB)
+  [3.8] Schmitt Trigger Hysteresis: PASS (T_high=20 LSB, T_low=10 LSB, Dead-Band=10 LSB >= 8 LSB)
+  [3.9] Progressive Hover Hierarchy: PASS (Approach: 6 < Hover: 14 < Press: 20 LSB)
   [3.10] Common-Mode Rejection: PASS (Top-Center Ref: (0.000, 0.001, 0.035), Weight: 0.25)
   [3.11] Distance-Adaptive Kernel: PASS (Kernel: 2-4px radius, Range: 0.15m - 0.50m)
 

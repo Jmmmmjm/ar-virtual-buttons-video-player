@@ -11,32 +11,75 @@ public class HologramDiagnosticHUD : MonoBehaviour
     [SerializeField] private bool showHUD = true;
 #if !ENABLE_INPUT_SYSTEM
     [SerializeField] private KeyCode toggleKey = KeyCode.H;
+    [SerializeField] private KeyCode resetKey = KeyCode.R;
 #endif
 
     private HologramButtonController buttonController;
     private HologramVideoController videoController;
+    private HologramMonitorDisplay monitorDisplay;
     private ObserverBehaviour observerBehaviour;
 
     private void Start()
     {
         buttonController = FindFirstObjectByType<HologramButtonController>();
         videoController = FindFirstObjectByType<HologramVideoController>();
+        monitorDisplay = FindFirstObjectByType<HologramMonitorDisplay>();
         observerBehaviour = FindFirstObjectByType<ObserverBehaviour>();
     }
 
     private void Update()
     {
 #if ENABLE_INPUT_SYSTEM
-        if (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.hKey.wasPressedThisFrame)
+        if (UnityEngine.InputSystem.Keyboard.current != null)
         {
-            showHUD = !showHUD;
+            if (UnityEngine.InputSystem.Keyboard.current.hKey.wasPressedThisFrame)
+            {
+                showHUD = !showHUD;
+            }
+            if (UnityEngine.InputSystem.Keyboard.current.rKey.wasPressedThisFrame)
+            {
+                ResetSensors();
+            }
         }
 #else
         if (Input.GetKeyDown(toggleKey))
         {
             showHUD = !showHUD;
         }
+        if (Input.GetKeyDown(resetKey))
+        {
+            ResetSensors();
+        }
 #endif
+    }
+
+    /// <summary>
+    /// Recalibrates all optical sensor baselines, clears button latching, and un-sticks state machines.
+    /// </summary>
+    public void ResetSensors()
+    {
+        if (buttonController != null)
+        {
+            buttonController.ResetBaselinesAndSensors();
+        }
+    }
+
+    /// <summary>
+    /// Resets all optical sensor baselines, stops active video playback, and powers off the holographic monitor into standby.
+    /// </summary>
+    public void ResetToStandby()
+    {
+        ResetSensors();
+
+        if (videoController != null)
+        {
+            videoController.StopPlayback();
+        }
+
+        if (monitorDisplay != null)
+        {
+            monitorDisplay.PowerOff(instant: false);
+        }
     }
 
     private void OnGUI()
@@ -45,7 +88,7 @@ public class HologramDiagnosticHUD : MonoBehaviour
 
         int pad = 12;
         int boxW = 320;
-        int boxH = 260;
+        int boxH = 280;
 
         GUI.Box(new Rect(pad, pad, boxW, boxH), "=== AR HOLOGRAM MONITOR HUD ===");
 
@@ -96,8 +139,24 @@ public class HologramDiagnosticHUD : MonoBehaviour
             }
         }
 
-        y += 5;
+        y += 8;
+
+        // On-Screen Reset Buttons
+        int btnW = (boxW - 28) / 2;
+        GUI.color = new Color(0.25f, 0.95f, 1f);
+        if (GUI.Button(new Rect(pad + 10, y, btnW, 26), "⟲ Reset Sensors"))
+        {
+            ResetSensors();
+        }
+
+        GUI.color = new Color(1f, 0.55f, 0.55f);
+        if (GUI.Button(new Rect(pad + 18 + btnW, y, btnW, 26), "⟲ Full Standby"))
+        {
+            ResetToStandby();
+        }
+
+        y += 32;
         GUI.color = Color.gray;
-        GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), "Press [H] to toggle HUD");
+        GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), "Hotkeys: [H] Toggle HUD  |  [R] Reset Sensors");
     }
 }
