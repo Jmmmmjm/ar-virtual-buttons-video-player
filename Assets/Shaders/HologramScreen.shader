@@ -20,7 +20,7 @@ Shader "Custom/HologramScreen"
         _ChromaticJitter ("Chromatic Jitter Base", Range(0.0, 0.02)) = 0.002
 
         // Upgraded Holographic Features
-        _HexGridIntensity ("Hex Grid Intensity", Range(0.0, 1.0)) = 0.35
+        _HexGridIntensity ("Hex Grid Intensity", Range(0.0, 1.0)) = 0.0
         _HexGridScale ("Hex Grid Density", Float) = 45.0
         _MacroblockGlitch ("Macroblock Glitch Intensity", Range(0.0, 1.0)) = 0.0
         _FresnelIridescence ("Grazing Iridescence", Range(0.0, 2.0)) = 0.85

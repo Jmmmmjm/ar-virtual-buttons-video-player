@@ -78,8 +78,8 @@ public static class ShaderVerificationHook
             sb.AppendLine("\n--- MATERIAL DEFAULTS CHECK: Mat_HologramScreen ---");
             sb.AppendLine($"Shader assigned: {mat.shader.name}");
 
-            if (!mat.HasProperty("_HexGridIntensity") || mat.GetFloat("_HexGridIntensity") == 0f)
-                mat.SetFloat("_HexGridIntensity", 0.35f);
+            if (mat.HasProperty("_HexGridIntensity"))
+                mat.SetFloat("_HexGridIntensity", 0.0f);
             if (!mat.HasProperty("_HexGridScale") || mat.GetFloat("_HexGridScale") == 0f)
                 mat.SetFloat("_HexGridScale", 45.0f);
             if (!mat.HasProperty("_FresnelIridescence") || mat.GetFloat("_FresnelIridescence") == 0f)
@@ -98,7 +98,7 @@ public static class ShaderVerificationHook
             sb.AppendLine($"_EmissionMultiplier: {mat.GetFloat("_EmissionMultiplier")} (Expected: 2.5)");
             sb.AppendLine($"_Saturation: {mat.GetFloat("_Saturation")} (Expected: 1.4)");
             sb.AppendLine($"_Alpha: {mat.GetFloat("_Alpha")} (Expected: 0.95)");
-            sb.AppendLine($"_HexGridIntensity: {mat.GetFloat("_HexGridIntensity")} (Expected: 0.35)");
+            sb.AppendLine($"_HexGridIntensity: {mat.GetFloat("_HexGridIntensity")} (Expected: 0.0)");
             sb.AppendLine($"_HexGridScale: {mat.GetFloat("_HexGridScale")} (Expected: 45.0)");
             sb.AppendLine($"_MacroblockGlitch: {mat.GetFloat("_MacroblockGlitch")} (Expected: 0.0)");
             sb.AppendLine($"_FresnelIridescence: {mat.GetFloat("_FresnelIridescence")} (Expected: 0.85)");

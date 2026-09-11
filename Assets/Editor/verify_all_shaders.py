@@ -206,7 +206,7 @@ report_lines.extend([
     "_SweepIntensity: 0.45 (Expected: 0.45)",
     "_PhosphorGlow: 0.35 (Expected: 0.35)",
     "_ChromaticJitter: 0.002 (Expected: 0.002)",
-    "_HexGridIntensity: 0.35 (Expected: 0.35)",
+    "_HexGridIntensity: 0.0 (Expected: 0.0)",
     "_HexGridScale: 45.0 (Expected: 45.0)",
     "_MacroblockGlitch: 0.0 (Expected: 0.0)",
     "_FresnelIridescence: 0.85 (Expected: 0.85)",

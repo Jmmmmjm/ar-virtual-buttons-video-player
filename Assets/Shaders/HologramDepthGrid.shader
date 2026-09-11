@@ -3,13 +3,16 @@ Shader "Custom/HologramDepthGrid"
     Properties
     {
         [HDR] _GridColor ("Grid Color", Color) = (0.1, 0.65, 1.0, 1.0)
-        _EmissionMultiplier ("Emission Multiplier", Range(1.0, 8.0)) = 2.0
+        _EmissionMultiplier ("Emission Multiplier", Range(0.0, 8.0)) = 0.0
         _GridDensity ("Grid Density (Cols, Rows)", Vector) = (24.0, 13.5, 0.0, 0.0)
         _LineWidth ("Line Width", Range(0.001, 0.05)) = 0.015
+        _GridLinesIntensity ("Gridlines Intensity", Range(0.0, 1.0)) = 0.0
+        _CrosshairSize ("Crosshair Size", Range(0.0, 0.3)) = 0.0
+        _CrosshairIntensity ("Crosshair Intensity", Range(0.0, 1.0)) = 0.0
         _GimbalRadius ("Gimbal Radius", Range(0.05, 0.5)) = 0.28
         _GimbalSpeed ("Gimbal Rotation Speed", Float) = 0.35
+        _CircleIntensity ("Circle / Gimbal Intensity", Range(0.0, 1.0)) = 0.0
         _EdgeFadeDist ("Edge Fade Distance", Range(0.01, 0.3)) = 0.1
-        _CrosshairSize ("Crosshair Size", Range(0.02, 0.3)) = 0.08
         _PulseFrequency ("Pulse Frequency", Float) = 1.5
     }
 
@@ -54,10 +57,13 @@ Shader "Custom/HologramDepthGrid"
                 float4 _GridDensity;
                 float _EmissionMultiplier;
                 float _LineWidth;
+                float _GridLinesIntensity;
+                float _CrosshairSize;
+                float _CrosshairIntensity;
                 float _GimbalRadius;
                 float _GimbalSpeed;
+                float _CircleIntensity;
                 float _EdgeFadeDist;
-                float _CrosshairSize;
                 float _PulseFrequency;
             CBUFFER_END
 
@@ -128,7 +134,7 @@ Shader "Custom/HologramDepthGrid"
                 float pulse = 0.88 + 0.12 * sin(_Time.y * _PulseFrequency);
 
                 // 6. Holographic Composite
-                float totalIntensity = (gridLines + crosshair + gimbal) * pulse * edgeFade;
+                float totalIntensity = (gridLines * _GridLinesIntensity + crosshair * _CrosshairIntensity + gimbal * _CircleIntensity) * pulse * edgeFade;
                 float3 finalColor = _GridColor.rgb * totalIntensity * _EmissionMultiplier;
 
                 // 100% Additive: Blends over scene with no dark backing box

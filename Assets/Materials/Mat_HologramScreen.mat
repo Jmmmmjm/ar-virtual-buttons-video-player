@@ -37,7 +37,7 @@ Material:
     - _EmissionMultiplier: 2.5
     - _FresnelIridescence: 0.85
     - _GlitchIntensity: 0
-    - _HexGridIntensity: 0.35
+    - _HexGridIntensity: 0
     - _HexGridScale: 45
     - _MacroblockGlitch: 0
     - _PhosphorGlow: 0.35

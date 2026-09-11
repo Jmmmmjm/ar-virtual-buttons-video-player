@@ -1,7 +1,7 @@
 =================================================
 === HOLOGRAM SHADER & MATERIAL VERIFICATION ===
 =================================================
-Timestamp: 2026-09-11 14:37:16
+Timestamp: 2026-09-11 21:36:01
 
 --- SHADER: Custom/HologramScreen ---
 Shader isSupported: True
@@ -27,7 +27,7 @@ _Brightness: 3.2 (Expected: 3.2)
 _EmissionMultiplier: 2.5 (Expected: 2.5)
 _Saturation: 1.4 (Expected: 1.4)
 _Alpha: 0.95 (Expected: 0.95)
-_HexGridIntensity: 0.35 (Expected: 0.35)
+_HexGridIntensity: 0 (Expected: 0.0)
 _HexGridScale: 45 (Expected: 45.0)
 _MacroblockGlitch: 0 (Expected: 0.0)
 _FresnelIridescence: 0.85 (Expected: 0.85)
