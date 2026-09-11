@@ -41,7 +41,7 @@ public static class HologramSelfAudit
         int totalChecks = 0;
 
         // Ensure scene is loaded
-        if (EditorSceneManager.GetActiveScene().path != SCENE_PATH)
+        if (!EditorApplication.isPlaying && EditorSceneManager.GetActiveScene().path != SCENE_PATH)
         {
             EditorSceneManager.OpenScene(SCENE_PATH);
         }

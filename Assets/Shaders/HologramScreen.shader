@@ -150,9 +150,8 @@ Shader "Custom/HologramScreen"
                 float2 edgeDist = min(uv, 1.0 - uv);
                 float edgeFade = smoothstep(0.0, _EdgeFadeDist, min(edgeDist.x, edgeDist.y));
 
-                // 2. 2D Macroblock Glitch & Matrix Corruption
+                // 2. 2D Macroblock Glitch & Matrix Displacement
                 float2 glitchedUV = uv;
-                float blockInvert = 0.0;
 
                 if (totalGlitch > 0.001)
                 {
@@ -165,10 +164,9 @@ Shader "Custom/HologramScreen"
                     {
                         float2 blockDisp = float2(
                             PseudoRandom(blockID + float2(1.17, blockTime)) - 0.5,
-                            PseudoRandom(blockID + float2(blockTime, 3.41)) - 0.5
+                            0.0
                         );
-                        glitchedUV += blockDisp * float2(0.08, 0.03) * totalGlitch;
-                        blockInvert = step(0.78, blockNoise);
+                        glitchedUV += blockDisp * float2(0.04, 0.0) * totalGlitch;
                     }
                 }
 
@@ -185,16 +183,11 @@ Shader "Custom/HologramScreen"
                 float2 uvG = glitchedUV + float2(sliceNoise * 0.25, 0.0);
                 float2 uvB = glitchedUV - float2(totalChromOffset - sliceNoise * 0.5, 0.0);
 
-                // 4. Center Video Sample & Matrix Inversion
+                // 4. Center Video Sample
                 float rCenter = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uvR).r;
                 float gCenter = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uvG).g;
                 float bCenter = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uvB).b;
                 float3 centerRGB = float3(rCenter, gCenter, bCenter);
-
-                if (blockInvert > 0.5)
-                {
-                    centerRGB = lerp(centerRGB, float3(1.0 - centerRGB.g, 1.0 - centerRGB.b, 1.0 - centerRGB.r), totalGlitch);
-                }
 
                 // 5. Multi-tap Phosphor Glow Sampling
                 float glowOffset = 0.0035 * (1.0 + totalGlitch * 2.0);

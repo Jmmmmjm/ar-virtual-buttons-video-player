@@ -54,6 +54,7 @@ public class HologramButtonController : MonoBehaviour
         [HideInInspector] public float luminanceDrop = 0f;
         [HideInInspector] public float netContrast = 0f;
         [HideInInspector] public int triggerFrames = 0;
+        [HideInInspector] public float pressedStartTime = 0f;
         [HideInInspector] public bool isOccluded = false;
         [HideInInspector] public bool isAnimating = false;
         [HideInInspector] public Vector2 cameraImageCoord;
@@ -83,17 +84,17 @@ public class HologramButtonController : MonoBehaviour
 
     [Header("=== Schmitt Trigger & Hysteresis ===")]
     [Tooltip("Activation threshold (T_high) in LSB for press commitment")]
-    [SerializeField] private float activationThreshold = 24f;
+    [SerializeField] private float activationThreshold = 20f;
     [Tooltip("Deactivation threshold (T_low) in LSB for release commitment")]
-    [SerializeField] private float deactivationThreshold = 12f;
+    [SerializeField] private float deactivationThreshold = 10f;
     [Tooltip("Consecutive frames above T_high required to trigger")]
     [SerializeField] private int debounceFrameRequirement = 2;
 
     [Header("=== Progressive Hover & Approach Thresholds ===")]
     [Tooltip("Approach threshold for magnetic badge elevation and high-frequency tick")]
-    [SerializeField] private float approachThreshold = 8f;
+    [SerializeField] private float approachThreshold = 6f;
     [Tooltip("Hover threshold for badge pulse and tactical lock tone")]
-    [SerializeField] private float hoverThreshold = 16f;
+    [SerializeField] private float hoverThreshold = 14f;
 
     [Header("=== Common-Mode Rejection (Global Ambient Reference) ===")]
     [Tooltip("Local coordinates on ImageTarget for ambient reference patch (Top-Center)")]
@@ -378,16 +379,22 @@ public class HologramButtonController : MonoBehaviour
         }
 
         // 3. Per-Button Optical Occlusion Sampling
-        float highestDrop = -999f;
-        int bestCandidate = -1;
-
+        float[] rawDrops = new float[buttons.Length];
         for (int i = 0; i < buttons.Length; i++)
         {
             var btn = buttons[i];
-            if (btn.buttonRoot == null || mainCamera == null) continue;
+            if (btn.buttonRoot == null || mainCamera == null)
+            {
+                rawDrops[i] = 0f;
+                continue;
+            }
 
             Vector3 screenPoint = mainCamera.WorldToScreenPoint(btn.buttonRoot.position);
-            if (screenPoint.z <= 0) continue; // Behind camera
+            if (screenPoint.z <= 0)
+            {
+                rawDrops[i] = 0f;
+                continue; // Behind camera
+            }
 
             float normX = Mathf.Clamp01(screenPoint.x / Screen.width);
             float normY = Mathf.Clamp01(screenPoint.y / Screen.height);
@@ -413,26 +420,62 @@ public class HologramButtonController : MonoBehaviour
             btn.innerLuminance = innerAvg;
             btn.currentLuminance = innerAvg;
 
-            // Calibrate Baseline
+            // Initialize Baseline on first valid sample
             if (btn.baselineLuminance < 0f)
             {
                 btn.baselineLuminance = innerAvg;
             }
-            else if (btn.state == VirtualButtonRig.ButtonState.Idle && btn.luminanceDrop < approachThreshold)
+
+            rawDrops[i] = Mathf.Max(0f, btn.baselineLuminance - innerAvg);
+        }
+
+        // 3b. Array-Wide Multi-Sensor Common-Mode Rejection & Ambient Drift Detection
+        // If ALL buttons experience a luminance drop, or 2+ buttons experience a large drop,
+        // it is GUARANTEED to be an ambient lighting shift (phone moved, room dimmed, body shadow),
+        // NOT a localized single-finger touch!
+        float minArrayDrop = float.MaxValue;
+        int droppingButtonsCount = 0;
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            if (rawDrops[i] < minArrayDrop) minArrayDrop = rawDrops[i];
+            if (rawDrops[i] > approachThreshold) droppingButtonsCount++;
+        }
+        if (minArrayDrop == float.MaxValue) minArrayDrop = 0f;
+
+        bool isAmbientShift = droppingButtonsCount >= 2 || minArrayDrop > 5f;
+
+        // Baseline adaptation:
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            var btn = buttons[i];
+            if (btn.baselineLuminance < 0f) continue;
+
+            if (isAmbientShift)
             {
-                // Slowly drift baseline ONLY when idle and unoccluded
-                btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, innerAvg, Time.deltaTime * baselineAdaptSpeed);
+                // Rapidly track ambient lighting changes across all buttons so baseline recalibrates in <0.5s!
+                btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, btn.innerLuminance, Time.deltaTime * 3.5f);
             }
+            else if (btn.state == VirtualButtonRig.ButtonState.Idle)
+            {
+                // Gentle baseline drift when idle
+                btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, btn.innerLuminance, Time.deltaTime * baselineAdaptSpeed);
+            }
+        }
 
-            // Raw Luminance Drop (Physical finger blocking camera pixels)
-            float rawDrop = Mathf.Max(0f, btn.baselineLuminance - innerAvg);
+        // Common-mode rejection: subtract ambient shift (combines reference patch drop and array min drop)
+        float commonDrop = Mathf.Max(minArrayDrop, refLuminanceDrop * commonModeRejectionWeight);
 
-            // Subtract global ambient drop (CMRR) with safety clamp
-            float netMetric = rawDrop - Mathf.Min(rawDrop * 0.4f, refLuminanceDrop * commonModeRejectionWeight);
+        float highestDrop = -999f;
+        int bestCandidate = -1;
+
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            var btn = buttons[i];
+            // Net drop isolates genuine localized finger occlusion!
+            float netMetric = Mathf.Max(0f, rawDrops[i] - commonDrop);
             btn.luminanceDrop = netMetric;
             btn.netContrast = netMetric;
 
-            // Winner-Take-All competition
             if (netMetric >= activationThreshold && netMetric > highestDrop)
             {
                 highestDrop = netMetric;
@@ -441,31 +484,79 @@ public class HologramButtonController : MonoBehaviour
         }
 
         // 4. Schmitt Trigger Hysteresis & Winner-Take-All State Machine
+        int currentlyPressedIndex = -1;
         for (int i = 0; i < buttons.Length; i++)
         {
-            var btn = buttons[i];
-            float metric = btn.luminanceDrop;
-
-            if (btn.state == VirtualButtonRig.ButtonState.Pressed)
+            if (buttons[i].state == VirtualButtonRig.ButtonState.Pressed)
             {
-                // Deactivation hysteresis trip point (12 LSB)
-                if (metric < deactivationThreshold)
-                {
-                    btn.state = VirtualButtonRig.ButtonState.Idle;
-                    btn.triggerFrames = 0;
-                    btn.isOccluded = false;
+                currentlyPressedIndex = i;
+                break;
+            }
+        }
 
-                    if (audioSynthesizer != null)
-                    {
-                        audioSynthesizer.PlayRelayClick(0.30f);
-                    }
-                    UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
+        // If a button is currently pressed, process release or auto-release timeout
+        if (currentlyPressedIndex >= 0)
+        {
+            var pBtn = buttons[currentlyPressedIndex];
+            float pMetric = pBtn.luminanceDrop;
+            bool shouldRelease = false;
+
+            // Hysteresis release: finger lifted
+            if (pMetric < deactivationThreshold)
+            {
+                shouldRelease = true;
+            }
+            // Auto-release timeout: prevents sticking if room light changed or object placed
+            else if (Time.time - pBtn.pressedStartTime > 1.2f)
+            {
+                shouldRelease = true;
+                pBtn.baselineLuminance = pBtn.innerLuminance; // Adapt immediately
+            }
+            // Ambient shift occurred while pressed
+            else if (isAmbientShift)
+            {
+                shouldRelease = true;
+                pBtn.baselineLuminance = pBtn.innerLuminance; // Adapt immediately
+            }
+
+            if (shouldRelease)
+            {
+                pBtn.state = VirtualButtonRig.ButtonState.Idle;
+                pBtn.triggerFrames = 0;
+                pBtn.isOccluded = false;
+
+                if (audioSynthesizer != null)
+                {
+                    audioSynthesizer.PlayRelayClick(0.30f);
+                }
+                UpdateButtonGlow(currentlyPressedIndex, pBtn.channelIndex == activeChannelIndex);
+                currentlyPressedIndex = -1;
+            }
+        }
+
+        // Strict Mutual Exclusion: Clear isOccluded and reset pressed state on all non-pressed buttons
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            if (i != currentlyPressedIndex)
+            {
+                buttons[i].isOccluded = false;
+                if (buttons[i].state == VirtualButtonRig.ButtonState.Pressed)
+                {
+                    buttons[i].state = VirtualButtonRig.ButtonState.Idle;
+                    buttons[i].triggerFrames = 0;
                 }
             }
-            else
+        }
+
+        // If NO button is currently pressed, process candidate activation and hover dynamics
+        if (currentlyPressedIndex < 0)
+        {
+            for (int i = 0; i < buttons.Length; i++)
             {
-                // Any state (Idle, Approach, Hover) can directly trigger Press if above threshold
-                if (metric >= activationThreshold && i == bestCandidate)
+                var btn = buttons[i];
+                float metric = btn.luminanceDrop;
+
+                if (i == bestCandidate && metric >= activationThreshold)
                 {
                     btn.triggerFrames++;
                     if (btn.triggerFrames >= debounceFrameRequirement)
@@ -474,7 +565,9 @@ public class HologramButtonController : MonoBehaviour
                         {
                             btn.state = VirtualButtonRig.ButtonState.Pressed;
                             btn.isOccluded = true;
+                            btn.pressedStartTime = Time.time;
                             ExecuteButtonPress(i);
+                            break; // Winner committed, no other button can trigger this cycle
                         }
                         else if (Time.time - lastWarningSoundTime >= 0.25f && audioSynthesizer != null)
                         {
@@ -483,31 +576,25 @@ public class HologramButtonController : MonoBehaviour
                         }
                     }
                 }
-                else if (metric >= hoverThreshold)
+                else if (i == bestCandidate && metric >= hoverThreshold)
                 {
                     btn.triggerFrames = 0;
                     if (btn.state != VirtualButtonRig.ButtonState.Hover)
                     {
                         btn.state = VirtualButtonRig.ButtonState.Hover;
-                        if (audioSynthesizer != null)
-                        {
-                            audioSynthesizer.PlayTargetLock(0.35f);
-                        }
+                        if (audioSynthesizer != null) audioSynthesizer.PlayTargetLock(0.35f);
                     }
                 }
-                else if (metric >= approachThreshold)
+                else if (i == bestCandidate && metric >= approachThreshold)
                 {
                     btn.triggerFrames = 0;
                     if (btn.state != VirtualButtonRig.ButtonState.Approach)
                     {
                         btn.state = VirtualButtonRig.ButtonState.Approach;
-                        if (audioSynthesizer != null)
-                        {
-                            audioSynthesizer.PlayGyroTick(0.30f);
-                        }
+                        if (audioSynthesizer != null) audioSynthesizer.PlayGyroTick(0.30f);
                     }
                 }
-                else if (metric < (approachThreshold - 3f)) // Hysteresis exit: 5 LSB
+                else
                 {
                     btn.triggerFrames = 0;
                     if (btn.state != VirtualButtonRig.ButtonState.Idle)
@@ -586,6 +673,17 @@ public class HologramButtonController : MonoBehaviour
         if (index < 0 || index >= buttons.Length) return;
         lastPressTime = Time.time;
         activeChannelIndex = buttons[index].channelIndex;
+
+        // Mutual exclusion: Ensure all other buttons are Idle and unoccluded
+        for (int b = 0; b < buttons.Length; b++)
+        {
+            if (b != index)
+            {
+                buttons[b].isOccluded = false;
+                buttons[b].state = VirtualButtonRig.ButtonState.Idle;
+                buttons[b].triggerFrames = 0;
+            }
+        }
 
         Debug.Log($"[HologramButtonController] Activating Channel {index + 1}: {buttons[index].name}");
 

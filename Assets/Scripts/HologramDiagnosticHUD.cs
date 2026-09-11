@@ -84,8 +84,13 @@ public class HologramDiagnosticHUD : MonoBehaviour
             for (int i = 0; i < buttonController.Buttons.Length; i++)
             {
                 var btn = buttonController.Buttons[i];
-                string dropText = $"Ch{i + 1} ({btn.name}): Cur={btn.currentLuminance:F0} Drop={btn.luminanceDrop:F0} {(btn.isOccluded ? "[PRESSED]" : "")}";
-                GUI.color = btn.isOccluded ? Color.green : (btn.luminanceDrop > 15f ? Color.yellow : Color.white);
+                string stateTag = btn.isOccluded ? "[PRESSED]" :
+                                  (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Hover ? "[HOVER]" :
+                                  (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Approach ? "[APPROACH]" : ""));
+                string dropText = $"Ch{i + 1} ({btn.name}): Cur={btn.currentLuminance:F0} Drop={btn.luminanceDrop:F0} {stateTag}";
+                GUI.color = btn.isOccluded ? Color.green :
+                            (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Hover ? Color.yellow :
+                            (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Approach ? Color.cyan : Color.white));
                 GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), dropText);
                 y += lineH;
             }

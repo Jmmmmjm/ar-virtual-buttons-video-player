@@ -207,6 +207,11 @@ public class HologramMonitorDisplay : MonoBehaviour
             StopCoroutine(transitionCoroutine);
             transitionCoroutine = null;
         }
+        if (screenMat != null)
+        {
+            screenMat.SetFloat(GlitchIntensityId, 0f);
+            screenMat.SetFloat(BrightnessId, 3.2f);
+        }
     }
 
     private void CacheMaterials()
@@ -617,6 +622,12 @@ public class HologramMonitorDisplay : MonoBehaviour
         if (transitionCoroutine != null)
         {
             StopCoroutine(transitionCoroutine);
+            transitionCoroutine = null;
+            if (screenMat != null)
+            {
+                screenMat.SetFloat(GlitchIntensityId, 0f);
+                screenMat.SetFloat(BrightnessId, 3.2f);
+            }
         }
 
         if (wasOff)
@@ -646,6 +657,11 @@ public class HologramMonitorDisplay : MonoBehaviour
         {
             StopCoroutine(transitionCoroutine);
             transitionCoroutine = null;
+            if (screenMat != null)
+            {
+                screenMat.SetFloat(GlitchIntensityId, 0f);
+                screenMat.SetFloat(BrightnessId, 3.2f);
+            }
         }
 
         if (screenRenderer != null)
@@ -710,115 +726,121 @@ public class HologramMonitorDisplay : MonoBehaviour
         if (screenRenderer != null) screenRenderer.transform.localScale = Vector3.zero;
         SetCornerReticlesScale(0f);
 
-        while (elapsed < duration)
+        try
         {
-            elapsed += Time.deltaTime;
-            float progress = Mathf.Clamp01(elapsed / duration);
-
-            float springFactor;
-            if (progress < 0.65f)
+            while (elapsed < duration)
             {
-                float p = progress / 0.65f;
-                springFactor = Mathf.SmoothStep(0f, 1.05f, p);
-            }
-            else
-            {
-                float p = (progress - 0.65f) / 0.35f;
-                springFactor = Mathf.Lerp(1.05f, 1.0f, Mathf.SmoothStep(0f, 1f, p));
-            }
+                elapsed += Time.deltaTime;
+                float progress = Mathf.Clamp01(elapsed / duration);
 
-            if (screenRenderer != null)
-            {
-                screenRenderer.transform.localScale = targetScreenScale * springFactor;
-            }
-            SetCornerReticlesScale(springFactor);
+                // Spring scale: 0 -> 1.05 -> 1.0
+                float springFactor;
+                if (progress < 0.65f)
+                {
+                    float p = progress / 0.65f;
+                    springFactor = Mathf.SmoothStep(0f, 1.05f, p);
+                }
+                else
+                {
+                    float p = (progress - 0.65f) / 0.35f;
+                    springFactor = Mathf.Lerp(1.05f, 1.0f, Mathf.SmoothStep(0f, 1f, p));
+                }
 
-            float flareBrightness = Mathf.Lerp(5.0f, 3.2f, progress) + Random.Range(-0.2f, 0.2f);
-            float glitchVal = Mathf.Sin(progress * Mathf.PI) * 0.95f;
+                if (screenRenderer != null)
+                {
+                    screenRenderer.transform.localScale = targetScreenScale * springFactor;
+                }
+                SetCornerReticlesScale(springFactor);
+
+                float flareBrightness = Mathf.Lerp(5.0f, 3.2f, progress) + Random.Range(-0.2f, 0.2f);
+                float glitchVal = Mathf.Sin(progress * Mathf.PI) * 0.95f;
+
+                if (screenMat != null)
+                {
+                    screenMat.SetFloat(GlitchIntensityId, glitchVal);
+                    screenMat.SetFloat(BrightnessId, flareBrightness);
+                    screenMat.SetColor(HoloColorId, Color.Lerp(Color.white, targetColor, progress));
+                }
+
+                if (beamMat != null)
+                {
+                    beamMat.SetColor(BeamColorId, targetColor * (1.0f + glitchVal * 1.2f));
+                }
+
+                if (lensMat != null)
+                {
+                    lensMat.SetColor(HoloColorId, targetColor * (1.5f + glitchVal * 2.0f));
+                }
+
+                if (reticleMat != null)
+                {
+                    Color flareReticle = Color.Lerp(Color.white, targetColor, progress) * (1.5f + glitchVal * 1.5f);
+                    if (reticleMat.HasProperty(EmissionColorId)) reticleMat.SetColor(EmissionColorId, flareReticle);
+                    if (reticleMat.HasProperty(BaseColorId)) reticleMat.SetColor(BaseColorId, targetColor);
+                }
+
+                if (baseMandalaMat != null)
+                {
+                    baseMandalaMat.SetColor(BaseColorId, Color.Lerp(Color.black, targetColor, progress));
+                    if (baseMandalaMat.HasProperty(EmissionMultiplierId))
+                    {
+                        baseMandalaMat.SetFloat(EmissionMultiplierId, Mathf.Lerp(0.5f, 3.5f, progress) + glitchVal * 1.5f);
+                    }
+                }
+
+                if (depthBackplaneMat != null)
+                {
+                    if (depthBackplaneMat.HasProperty(GridColorId))
+                    {
+                        depthBackplaneMat.SetColor(GridColorId, Color.Lerp(Color.black, targetColor, progress));
+                    }
+                }
+
+                AlignProjectorBeam();
+                yield return null;
+            }
+        }
+        finally
+        {
+            if (screenRenderer != null) screenRenderer.transform.localScale = targetScreenScale;
+            SetCornerReticlesScale(1f);
 
             if (screenMat != null)
             {
-                screenMat.SetFloat(GlitchIntensityId, glitchVal);
-                screenMat.SetFloat(BrightnessId, flareBrightness);
-                screenMat.SetColor(HoloColorId, Color.Lerp(Color.white, targetColor, progress));
+                screenMat.SetFloat(GlitchIntensityId, 0f);
+                screenMat.SetFloat(BrightnessId, 3.2f);
+                screenMat.SetColor(HoloColorId, targetColor);
             }
 
             if (beamMat != null)
             {
-                beamMat.SetColor(BeamColorId, targetColor * (1.0f + glitchVal * 1.2f));
+                beamMat.SetColor(BeamColorId, targetColor * 0.65f);
             }
 
             if (lensMat != null)
             {
-                lensMat.SetColor(HoloColorId, targetColor * (1.5f + glitchVal * 2.0f));
+                lensMat.SetColor(HoloColorId, targetColor * 1.8f);
             }
 
             if (reticleMat != null)
             {
-                Color flareReticle = Color.Lerp(Color.white, targetColor, progress) * (1.5f + glitchVal * 1.5f);
-                if (reticleMat.HasProperty(EmissionColorId)) reticleMat.SetColor(EmissionColorId, flareReticle);
+                if (reticleMat.HasProperty(EmissionColorId)) reticleMat.SetColor(EmissionColorId, targetColor * 1.5f);
                 if (reticleMat.HasProperty(BaseColorId)) reticleMat.SetColor(BaseColorId, targetColor);
             }
 
             if (baseMandalaMat != null)
             {
-                baseMandalaMat.SetColor(BaseColorId, Color.Lerp(Color.black, targetColor, progress));
-                if (baseMandalaMat.HasProperty(EmissionMultiplierId))
-                {
-                    baseMandalaMat.SetFloat(EmissionMultiplierId, Mathf.Lerp(0.5f, 3.5f, progress) + glitchVal * 1.5f);
-                }
+                baseMandalaMat.SetColor(BaseColorId, targetColor);
+                if (baseMandalaMat.HasProperty(EmissionMultiplierId)) baseMandalaMat.SetFloat(EmissionMultiplierId, 3.0f);
             }
 
-            if (depthBackplaneMat != null)
+            if (depthBackplaneMat != null && depthBackplaneMat.HasProperty(GridColorId))
             {
-                if (depthBackplaneMat.HasProperty(GridColorId))
-                {
-                    depthBackplaneMat.SetColor(GridColorId, Color.Lerp(Color.black, targetColor, progress));
-                }
+                depthBackplaneMat.SetColor(GridColorId, targetColor);
             }
 
-            AlignProjectorBeam();
-            yield return null;
+            transitionCoroutine = null;
         }
-
-        if (screenRenderer != null) screenRenderer.transform.localScale = targetScreenScale;
-        SetCornerReticlesScale(1f);
-
-        if (screenMat != null)
-        {
-            screenMat.SetFloat(GlitchIntensityId, 0f);
-            screenMat.SetFloat(BrightnessId, 3.2f);
-            screenMat.SetColor(HoloColorId, targetColor);
-        }
-
-        if (beamMat != null)
-        {
-            beamMat.SetColor(BeamColorId, targetColor * 0.65f);
-        }
-
-        if (lensMat != null)
-        {
-            lensMat.SetColor(HoloColorId, targetColor * 1.8f);
-        }
-
-        if (reticleMat != null)
-        {
-            if (reticleMat.HasProperty(EmissionColorId)) reticleMat.SetColor(EmissionColorId, targetColor * 1.5f);
-            if (reticleMat.HasProperty(BaseColorId)) reticleMat.SetColor(BaseColorId, targetColor);
-        }
-
-        if (baseMandalaMat != null)
-        {
-            baseMandalaMat.SetColor(BaseColorId, targetColor);
-            if (baseMandalaMat.HasProperty(EmissionMultiplierId)) baseMandalaMat.SetFloat(EmissionMultiplierId, 3.0f);
-        }
-
-        if (depthBackplaneMat != null && depthBackplaneMat.HasProperty(GridColorId))
-        {
-            depthBackplaneMat.SetColor(GridColorId, targetColor);
-        }
-
-        transitionCoroutine = null;
     }
 
     public void TriggerGlitchTransition(Color newThemeColor, string channelName)
@@ -826,6 +848,12 @@ public class HologramMonitorDisplay : MonoBehaviour
         if (transitionCoroutine != null)
         {
             StopCoroutine(transitionCoroutine);
+            transitionCoroutine = null;
+            if (screenMat != null)
+            {
+                screenMat.SetFloat(GlitchIntensityId, 0f);
+                screenMat.SetFloat(BrightnessId, 3.2f);
+            }
         }
         transitionCoroutine = StartCoroutine(GlitchTransitionRoutine(newThemeColor, channelName));
     }
@@ -845,6 +873,31 @@ public class HologramMonitorDisplay : MonoBehaviour
             statusBadgeText.color = targetColor;
         }
 
+        if (timecodeText != null)
+        {
+            timecodeText.color = targetColor;
+        }
+
+        // 16-Band Equalizer Color & Dynamic Theme Synchronization
+        if (eqBarRenderers != null && eqBarRenderers.Length > 0)
+        {
+            Color eqColor = targetColor * 1.8f;
+            for (int b = 0; b < eqBarRenderers.Length; b++)
+            {
+                if (eqBarRenderers[b] != null)
+                {
+                    eqBarRenderers[b].material.color = eqColor;
+                }
+            }
+        }
+
+        // Upward Quantum Photon Stream Particle Color Update
+        if (photonStreamParticles != null)
+        {
+            var mainModule = photonStreamParticles.main;
+            mainModule.startColor = new ParticleSystem.MinMaxGradient(targetColor * 1.2f, Color.white);
+        }
+
         if (reticleMat != null)
         {
             if (reticleMat.HasProperty(BaseColorId)) reticleMat.SetColor(BaseColorId, targetColor);
@@ -861,119 +914,120 @@ public class HologramMonitorDisplay : MonoBehaviour
             depthBackplaneMat.SetColor(GridColorId, targetColor);
         }
 
-        if (photonStreamParticles != null)
-        {
-            var main = photonStreamParticles.main;
-            main.startColor = targetColor;
-        }
-
         float duration = 0.38f;
         float elapsed = 0f;
 
-        while (elapsed < duration)
+        try
         {
-            elapsed += Time.deltaTime;
-            float progress = Mathf.Clamp01(elapsed / duration);
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float progress = Mathf.Clamp01(elapsed / duration);
 
-            float glitchVal = Mathf.Sin(progress * Mathf.PI) * 0.92f;
-            float flickerBrightness = 3.2f + Random.Range(-0.3f, 1.2f) * glitchVal;
+                float glitchVal = Mathf.Sin(progress * Mathf.PI) * 0.92f;
+                float flickerBrightness = 3.2f + Random.Range(-0.3f, 1.2f) * glitchVal;
 
+                if (screenMat != null)
+                {
+                    screenMat.SetFloat(GlitchIntensityId, glitchVal);
+                    screenMat.SetFloat(BrightnessId, flickerBrightness);
+                    screenMat.SetColor(HoloColorId, Color.Lerp(screenMat.GetColor(HoloColorId), targetColor, progress));
+                }
+
+                if (beamMat != null)
+                {
+                    beamMat.SetColor(BeamColorId, targetColor * (0.8f + glitchVal));
+                }
+
+                if (lensMat != null)
+                {
+                    lensMat.SetColor(HoloColorId, targetColor * (1.2f + glitchVal * 1.6f));
+                }
+
+                if (reticleMat != null)
+                {
+                    Color flareReticle = targetColor * (1.2f + glitchVal * 1.5f);
+                    if (reticleMat.HasProperty(EmissionColorId)) reticleMat.SetColor(EmissionColorId, flareReticle);
+                    if (reticleMat.HasProperty(BaseColorId)) reticleMat.SetColor(BaseColorId, targetColor);
+                }
+
+                if (baseMandalaMat != null)
+                {
+                    if (baseMandalaMat.HasProperty(EmissionMultiplierId))
+                    {
+                        baseMandalaMat.SetFloat(EmissionMultiplierId, 3.0f + glitchVal * 2.0f);
+                    }
+                }
+
+                yield return null;
+            }
+        }
+        finally
+        {
             if (screenMat != null)
             {
-                screenMat.SetFloat(GlitchIntensityId, glitchVal);
-                screenMat.SetFloat(BrightnessId, flickerBrightness);
-                screenMat.SetColor(HoloColorId, Color.Lerp(screenMat.GetColor(HoloColorId), targetColor, progress));
+                screenMat.SetFloat(GlitchIntensityId, 0f);
+                screenMat.SetFloat(BrightnessId, 3.2f);
+                screenMat.SetColor(HoloColorId, targetColor);
             }
 
             if (beamMat != null)
             {
-                beamMat.SetColor(BeamColorId, targetColor * (0.8f + glitchVal));
+                beamMat.SetColor(BeamColorId, targetColor * 0.65f);
             }
 
             if (lensMat != null)
             {
-                lensMat.SetColor(HoloColorId, targetColor * (1.2f + glitchVal * 1.6f));
+                lensMat.SetColor(HoloColorId, targetColor * 1.8f);
             }
 
             if (reticleMat != null)
             {
-                Color flareReticle = targetColor * (1.2f + glitchVal * 1.5f);
-                if (reticleMat.HasProperty(EmissionColorId)) reticleMat.SetColor(EmissionColorId, flareReticle);
+                if (reticleMat.HasProperty(EmissionColorId)) reticleMat.SetColor(EmissionColorId, targetColor * 1.5f);
                 if (reticleMat.HasProperty(BaseColorId)) reticleMat.SetColor(BaseColorId, targetColor);
             }
 
             if (baseMandalaMat != null)
             {
-                if (baseMandalaMat.HasProperty(EmissionMultiplierId))
-                {
-                    baseMandalaMat.SetFloat(EmissionMultiplierId, 3.0f + glitchVal * 2.0f);
-                }
+                baseMandalaMat.SetColor(BaseColorId, targetColor);
+                if (baseMandalaMat.HasProperty(EmissionMultiplierId)) baseMandalaMat.SetFloat(EmissionMultiplierId, 3.0f);
             }
 
-            yield return null;
+            transitionCoroutine = null;
         }
-
-        if (screenMat != null)
-        {
-            screenMat.SetFloat(GlitchIntensityId, 0f);
-            screenMat.SetFloat(BrightnessId, 3.2f);
-            screenMat.SetColor(HoloColorId, targetColor);
-        }
-
-        if (beamMat != null)
-        {
-            beamMat.SetColor(BeamColorId, targetColor * 0.65f);
-        }
-
-        if (lensMat != null)
-        {
-            lensMat.SetColor(HoloColorId, targetColor * 1.8f);
-        }
-
-        if (reticleMat != null)
-        {
-            if (reticleMat.HasProperty(EmissionColorId)) reticleMat.SetColor(EmissionColorId, targetColor * 1.5f);
-            if (reticleMat.HasProperty(BaseColorId)) reticleMat.SetColor(BaseColorId, targetColor);
-        }
-
-        if (baseMandalaMat != null)
-        {
-            baseMandalaMat.SetColor(BaseColorId, targetColor);
-            if (baseMandalaMat.HasProperty(EmissionMultiplierId)) baseMandalaMat.SetFloat(EmissionMultiplierId, 3.0f);
-        }
-
-        transitionCoroutine = null;
     }
 
     private IEnumerator PeriodicMicroGlitchRoutine()
     {
         while (true)
         {
-            float waitTime = Random.Range(3.0f, 5.0f);
+            float waitTime = Random.Range(15.0f, 25.0f);
             yield return new WaitForSeconds(waitTime);
 
             if (isPoweredOn && videoController != null && videoController.IsPlaying && transitionCoroutine == null)
             {
-                float burstDuration = Random.Range(0.12f, 0.18f);
+                float burstDuration = 0.08f;
                 float burstElapsed = 0f;
-                float burstIntensity = Random.Range(0.25f, 0.42f);
-                float burstBrightness = Random.Range(3.6f, 4.4f);
+                float burstIntensity = Random.Range(0.06f, 0.12f);
 
-                while (burstElapsed < burstDuration)
+                try
                 {
-                    burstElapsed += Time.deltaTime;
+                    while (burstElapsed < burstDuration)
+                    {
+                        burstElapsed += Time.deltaTime;
+                        if (screenMat != null && transitionCoroutine == null)
+                        {
+                            screenMat.SetFloat(GlitchIntensityId, burstIntensity);
+                        }
+                        yield return null;
+                    }
+                }
+                finally
+                {
                     if (screenMat != null && transitionCoroutine == null)
                     {
-                        screenMat.SetFloat(GlitchIntensityId, burstIntensity);
-                        screenMat.SetFloat(BrightnessId, burstBrightness);
+                        screenMat.SetFloat(GlitchIntensityId, 0f);
                     }
-                    yield return null;
-                }
-
-                if (screenMat != null && transitionCoroutine == null)
-                {
-                    screenMat.SetFloat(GlitchIntensityId, 0f);
-                    screenMat.SetFloat(BrightnessId, 3.2f);
                 }
             }
         }

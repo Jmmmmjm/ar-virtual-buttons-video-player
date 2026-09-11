@@ -28,6 +28,12 @@ public static class HologramSceneBuilder
 
     public static void BuildCompleteScene()
     {
+        if (EditorApplication.isPlaying)
+        {
+            Debug.LogWarning("[HologramSceneBuilder] Cannot rebuild scene while in Play Mode. Please exit Play Mode first.");
+            return;
+        }
+
         Debug.Log("[HologramSceneBuilder] Starting AR Hologram Scene generation...");
 
         // Ensure directories
@@ -235,6 +241,10 @@ public static class HologramSceneBuilder
         SetSerializedField(btnController, "videoController", videoController);
         SetSerializedField(btnController, "audioSynthesizer", audioSynth);
         SetSerializedField(btnController, "observerBehaviour", observer);
+        SetSerializedField(btnController, "activationThreshold", 20f);
+        SetSerializedField(btnController, "deactivationThreshold", 10f);
+        SetSerializedField(btnController, "approachThreshold", 6f);
+        SetSerializedField(btnController, "hoverThreshold", 14f);
 
         ConfigureButtonRig(btnController, 0, btn1Obj, 0, new Color(0f, 0.9f, 1f));
         ConfigureButtonRig(btnController, 1, btn2Obj, 1, new Color(1f, 0.75f, 0.1f));
