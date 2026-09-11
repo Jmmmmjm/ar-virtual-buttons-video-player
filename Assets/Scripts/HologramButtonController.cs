@@ -157,6 +157,9 @@ public class HologramButtonController : MonoBehaviour
     public float OcclusionThreshold => activationThreshold;
     public float ButtonCooldown => buttonCooldown;
     public int DebounceFrameRequirement => debounceFrameRequirement;
+    public float RefCurrentLuminance => refCurrentLuminance;
+    public float RefBaselineLuminance => refBaselineLuminance;
+    public float RefLuminanceDrop => refLuminanceDrop;
 
     private void Awake()
     {
@@ -259,6 +262,8 @@ public class HologramButtonController : MonoBehaviour
 
     private void Update()
     {
+        if (mainCamera == null) mainCamera = Camera.main;
+
         // 1. Mouse / Touchscreen tap fallback
         HandleScreenInput();
 
@@ -318,6 +323,63 @@ public class HologramButtonController : MonoBehaviour
     #endregion
 
     #region Physical Finger Occlusion (Direct Optical Pipeline + Common-Mode Shield)
+    /// <summary>
+    /// Maps a screen position (from WorldToScreenPoint) to camera image pixel coordinates,
+    /// taking into account camera viewport rect and Vuforia's video background placement.
+    /// </summary>
+    public Vector2Int MapScreenToCameraPixel(Vector3 screenPoint, int imgWidth, int imgHeight)
+    {
+        float viewW = (mainCamera != null && mainCamera.pixelWidth > 0) ? mainCamera.pixelWidth : Screen.width;
+        float viewH = (mainCamera != null && mainCamera.pixelHeight > 0) ? mainCamera.pixelHeight : Screen.height;
+
+        float normX = Mathf.Clamp01(screenPoint.x / viewW);
+        float normY = Mathf.Clamp01(screenPoint.y / viewH);
+
+        // If Vuforia provides video background viewport rect, map precisely within it
+        if (VuforiaBehaviour.Instance != null && VuforiaBehaviour.Instance.CameraDevice != null)
+        {
+            Rect bgRect = VuforiaBehaviour.Instance.CameraDevice.GetVideoBackgroundRectInViewPort();
+            if (bgRect.width > 0f && bgRect.height > 0f)
+            {
+                normX = Mathf.Clamp01((screenPoint.x - bgRect.xMin) / bgRect.width);
+                normY = Mathf.Clamp01((screenPoint.y - bgRect.yMin) / bgRect.height);
+            }
+        }
+
+        int imgX = Mathf.Clamp(Mathf.RoundToInt(normX * imgWidth), 0, imgWidth - 1);
+        int imgY = Mathf.Clamp(Mathf.RoundToInt((1f - normY) * imgHeight), 0, imgHeight - 1);
+
+        return new Vector2Int(imgX, imgY);
+    }
+
+    /// <summary>
+    /// Stride-safe kernel average sampling with row boundary protection.
+    /// </summary>
+    public static float SampleKernelAverage(byte[] pixels, int centerX, int centerY, int radius, int width, int height, int stride)
+    {
+        if (pixels == null || pixels.Length == 0 || width <= 0 || height <= 0) return 0f;
+        float sum = 0f;
+        int count = 0;
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            int y = centerY + dy;
+            if (y < 0 || y >= height) continue;
+            int rowStart = y * stride;
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                int x = centerX + dx;
+                if (x < 0 || x >= width) continue;
+                int idx = rowStart + x;
+                if (idx >= 0 && idx < pixels.Length)
+                {
+                    sum += pixels[idx];
+                    count++;
+                }
+            }
+        }
+        return count > 0 ? sum / count : 0f;
+    }
+
     private void HandlePhysicalFingerOcclusion()
     {
         if (!formatRegistered || VuforiaBehaviour.Instance == null || VuforiaBehaviour.Instance.CameraDevice == null)
@@ -336,6 +398,7 @@ public class HologramButtonController : MonoBehaviour
 
         cameraImageWidth = image.Width;
         cameraImageHeight = image.Height;
+        int stride = image.Stride > 0 ? image.Stride : cameraImageWidth;
         byte[] pixels = image.Pixels;
 
         Transform targetTransform = observerBehaviour != null ? observerBehaviour.transform : transform;
@@ -350,27 +413,21 @@ public class HologramButtonController : MonoBehaviour
         Vector3 refScreenPoint = mainCamera != null ? mainCamera.WorldToScreenPoint(refWorldPos) : Vector3.zero;
         if (refScreenPoint.z > 0f)
         {
-            float normRefX = Mathf.Clamp01(refScreenPoint.x / Screen.width);
-            float normRefY = Mathf.Clamp01(refScreenPoint.y / Screen.height);
-            int refImgX = Mathf.Clamp(Mathf.RoundToInt(normRefX * cameraImageWidth), 2, cameraImageWidth - 3);
-            int refImgY = Mathf.Clamp(Mathf.RoundToInt((1f - normRefY) * cameraImageHeight), 2, cameraImageHeight - 3);
-
-            float refSum = 0f;
-            int refCount = 0;
-            for (int dy = -2; dy <= 2; dy++)
-            {
-                int row = (refImgY + dy) * cameraImageWidth;
-                for (int dx = -2; dx <= 2; dx++)
-                {
-                    refSum += pixels[row + (refImgX + dx)];
-                    refCount++;
-                }
-            }
-            refCurrentLuminance = refCount > 0 ? refSum / refCount : refCurrentLuminance;
+            Vector2Int refCoord = MapScreenToCameraPixel(refScreenPoint, cameraImageWidth, cameraImageHeight);
+            refCurrentLuminance = SampleKernelAverage(pixels, refCoord.x, refCoord.y, 2, cameraImageWidth, cameraImageHeight, stride);
 
             if (refBaselineLuminance < 0f)
             {
                 refBaselineLuminance = refCurrentLuminance;
+            }
+            else if (refCurrentLuminance > refBaselineLuminance)
+            {
+                // Fast-rise tracking for ambient reference
+                refBaselineLuminance = Mathf.Lerp(refBaselineLuminance, refCurrentLuminance, Time.deltaTime * 10f);
+                if (refCurrentLuminance - refBaselineLuminance < 1.0f)
+                {
+                    refBaselineLuminance = refCurrentLuminance;
+                }
             }
             else
             {
@@ -397,55 +454,45 @@ public class HologramButtonController : MonoBehaviour
                 continue; // Behind camera
             }
 
-            float normX = Mathf.Clamp01(screenPoint.x / Screen.width);
-            float normY = Mathf.Clamp01(screenPoint.y / Screen.height);
+            Vector2Int btnCoord = MapScreenToCameraPixel(screenPoint, cameraImageWidth, cameraImageHeight);
+            btn.cameraImageCoord = new Vector2(btnCoord.x, btnCoord.y);
 
-            int imgX = Mathf.Clamp(Mathf.RoundToInt(normX * cameraImageWidth), innerRadius + 1, cameraImageWidth - innerRadius - 2);
-            int imgY = Mathf.Clamp(Mathf.RoundToInt((1f - normY) * cameraImageHeight), innerRadius + 1, cameraImageHeight - innerRadius - 2);
-
-            btn.cameraImageCoord = new Vector2(imgX, imgY);
-
-            // Sample Button Cap Kernel (distance-adaptive radius)
-            float innerSum = 0f;
-            int innerCount = 0;
-            for (int dy = -innerRadius; dy <= innerRadius; dy++)
-            {
-                int rowOffset = (imgY + dy) * cameraImageWidth;
-                for (int dx = -innerRadius; dx <= innerRadius; dx++)
-                {
-                    innerSum += pixels[rowOffset + (imgX + dx)];
-                    innerCount++;
-                }
-            }
-            float innerAvg = innerCount > 0 ? innerSum / innerCount : 0f;
+            float innerAvg = SampleKernelAverage(pixels, btnCoord.x, btnCoord.y, innerRadius, cameraImageWidth, cameraImageHeight, stride);
             btn.innerLuminance = innerAvg;
             btn.currentLuminance = innerAvg;
 
-            // Initialize Baseline on first valid sample
+            // Fast-Rise Baseline Adaptation:
+            // A human finger touch always darkens the surface. If the button sees brighter light than its current baseline,
+            // it is guaranteed to be an unoccluded surface (e.g. finger just lifted after Reset or lighting increased).
+            // Immediately track upward so baseline locks to the bright card surface!
             if (btn.baselineLuminance < 0f)
             {
                 btn.baselineLuminance = innerAvg;
+            }
+            else if (innerAvg > btn.baselineLuminance)
+            {
+                btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, innerAvg, Time.deltaTime * 15f);
+                if (innerAvg - btn.baselineLuminance < 1.0f)
+                {
+                    btn.baselineLuminance = innerAvg;
+                }
             }
 
             rawDrops[i] = Mathf.Max(0f, btn.baselineLuminance - innerAvg);
         }
 
-        // 3b. Array-Wide Multi-Sensor Common-Mode Rejection & Ambient Drift Detection
-        // If ALL buttons experience a luminance drop, or 2+ buttons experience a large drop,
-        // it is GUARANTEED to be an ambient lighting shift (phone moved, room dimmed, body shadow),
-        // NOT a localized single-finger touch!
-        float minArrayDrop = float.MaxValue;
-        int droppingButtonsCount = 0;
+        // 3b. Robust Ambient Shift Detection
+        // Ambient shift occurs ONLY if all buttons experience simultaneous heavy drops (>= 16 LSB),
+        // OR if the top-center ambient reference patch experiences a severe ambient lighting drop (> 30 LSB).
+        // A localized single-finger touch will NEVER darken all 3 buttons simultaneously.
+        int heavyDropButtons = 0;
         for (int i = 0; i < buttons.Length; i++)
         {
-            if (rawDrops[i] < minArrayDrop) minArrayDrop = rawDrops[i];
-            if (rawDrops[i] > approachThreshold) droppingButtonsCount++;
+            if (rawDrops[i] >= 16f) heavyDropButtons++;
         }
-        if (minArrayDrop == float.MaxValue) minArrayDrop = 0f;
+        bool isAmbientShift = (heavyDropButtons >= buttons.Length && buttons.Length >= 2) || (refLuminanceDrop > 30f);
 
-        bool isAmbientShift = droppingButtonsCount >= 2 || minArrayDrop > 5f;
-
-        // Baseline adaptation:
+        // Baseline downward drift (slow and controlled):
         for (int i = 0; i < buttons.Length; i++)
         {
             var btn = buttons[i];
@@ -453,18 +500,18 @@ public class HologramButtonController : MonoBehaviour
 
             if (isAmbientShift)
             {
-                // Rapidly track ambient lighting changes across all buttons so baseline recalibrates in <0.5s!
-                btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, btn.innerLuminance, Time.deltaTime * 3.5f);
+                // Re-center baselines during confirmed global lighting changes
+                btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, btn.innerLuminance, Time.deltaTime * 2.0f);
             }
-            else if (btn.state == VirtualButtonRig.ButtonState.Idle)
+            else if (btn.state == VirtualButtonRig.ButtonState.Idle && btn.innerLuminance < btn.baselineLuminance)
             {
-                // Gentle baseline drift when idle
+                // Slow downward drift only when idle to follow gradual room dimming
                 btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, btn.innerLuminance, Time.deltaTime * baselineAdaptSpeed);
             }
         }
 
-        // Common-mode rejection: subtract ambient shift (combines reference patch drop and array min drop)
-        float commonDrop = Mathf.Max(minArrayDrop, refLuminanceDrop * commonModeRejectionWeight);
+        // Common-mode rejection: gentle subtraction of ambient reference drop
+        float commonDrop = refLuminanceDrop * commonModeRejectionWeight;
 
         float highestDrop = -999f;
         int bestCandidate = -1;
@@ -508,7 +555,7 @@ public class HologramButtonController : MonoBehaviour
                 shouldRelease = true;
             }
             // Auto-release timeout: prevents sticking if room light changed or object placed
-            else if (Time.time - pBtn.pressedStartTime > 1.2f)
+            else if (Time.time - pBtn.pressedStartTime > 1.5f)
             {
                 shouldRelease = true;
                 pBtn.baselineLuminance = pBtn.innerLuminance; // Adapt immediately

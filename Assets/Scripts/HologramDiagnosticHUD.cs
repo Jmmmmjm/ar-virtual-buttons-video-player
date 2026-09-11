@@ -87,8 +87,8 @@ public class HologramDiagnosticHUD : MonoBehaviour
         if (!showHUD) return;
 
         int pad = 12;
-        int boxW = 320;
-        int boxH = 280;
+        int boxW = 340;
+        int boxH = 305;
 
         GUI.Box(new Rect(pad, pad, boxW, boxH), "=== AR HOLOGRAM MONITOR HUD ===");
 
@@ -115,31 +115,40 @@ public class HologramDiagnosticHUD : MonoBehaviour
         GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), $"Active Channel: {chName}");
         y += lineH;
         GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), $"Playback: {timeStr} {(videoController != null && videoController.IsPlaying ? "[PLAYING]" : "[IDLE]")}");
-        y += lineH + 5;
+        y += lineH + 4;
 
         // Button Luminance Metrics
         GUI.color = Color.cyan;
         GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), "--- Button Finger Occlusion Metrics ---");
         y += lineH;
 
-        if (buttonController != null && buttonController.Buttons != null)
+        if (buttonController != null)
         {
-            for (int i = 0; i < buttonController.Buttons.Length; i++)
+            GUI.color = new Color(0.75f, 0.75f, 0.75f);
+            GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), 
+                $"Ambient Ref: Cur={buttonController.RefCurrentLuminance:F0} Base={buttonController.RefBaselineLuminance:F0} Drop={buttonController.RefLuminanceDrop:F0}");
+            y += lineH;
+
+            if (buttonController.Buttons != null)
             {
-                var btn = buttonController.Buttons[i];
-                string stateTag = btn.isOccluded ? "[PRESSED]" :
-                                  (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Hover ? "[HOVER]" :
-                                  (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Approach ? "[APPROACH]" : ""));
-                string dropText = $"Ch{i + 1} ({btn.name}): Cur={btn.currentLuminance:F0} Drop={btn.luminanceDrop:F0} {stateTag}";
-                GUI.color = btn.isOccluded ? Color.green :
-                            (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Hover ? Color.yellow :
-                            (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Approach ? Color.cyan : Color.white));
-                GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), dropText);
-                y += lineH;
+                for (int i = 0; i < buttonController.Buttons.Length; i++)
+                {
+                    var btn = buttonController.Buttons[i];
+                    string stateTag = btn.isOccluded ? "[PRESSED]" :
+                                      (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Hover ? "[HOVER]" :
+                                      (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Approach ? "[APPROACH]" : ""));
+                    string coordStr = $"[{btn.cameraImageCoord.x:F0},{btn.cameraImageCoord.y:F0}]";
+                    string dropText = $"Ch{i + 1} ({btn.name}): Cur={btn.currentLuminance:F0} Base={btn.baselineLuminance:F0} Drop={btn.luminanceDrop:F0} {coordStr} {stateTag}";
+                    GUI.color = btn.isOccluded ? Color.green :
+                                (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Hover ? Color.yellow :
+                                (btn.state == HologramButtonController.VirtualButtonRig.ButtonState.Approach ? Color.cyan : Color.white));
+                    GUI.Label(new Rect(pad + 10, y, boxW - 20, lineH), dropText);
+                    y += lineH;
+                }
             }
         }
 
-        y += 8;
+        y += 6;
 
         // On-Screen Reset Buttons
         int btnW = (boxW - 28) / 2;
