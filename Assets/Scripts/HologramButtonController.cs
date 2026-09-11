@@ -6,12 +6,23 @@ using Vuforia;
 
 /// <summary>
 /// Hologram Interactive Virtual Button Controller.
-/// Provides multi-tiered button detection:
-/// 1. Native Vuforia Virtual Button events.
-/// 2. Physical Finger Occlusion (pixel luminance sampling from camera feed).
-/// 3. Touchscreen / Mouse Raycast fallback.
-/// 
-/// Includes tactile mechanical button cap depression animation and active channel indicator LED glow.
+/// Provides enterprise-grade smart button detection:
+/// 1. Optical Sensing Pipeline:
+///    - Dual-zone differential annular contrast sampling (inner cap vs outer rim)
+///    - Top-Center global ambient reference patch for Common-Mode Rejection (CMRR)
+///    - Asymmetric baseline drift (freezes adaptation during interaction to prevent resting finger corruption)
+///    - Distance-adaptive kernel scaling (scales sampling radii based on camera distance)
+///    - Schmitt trigger hysteresis (T_high=24, T_low=12 for chatter-free switching)
+///    - Winner-take-all spatial arbitration (prevents hand swipes from multi-triggering)
+///    - Progressive hover state machine (Approach -> Hover -> Pressed -> Release)
+/// 2. Multi-Stage Tactile Audio Feedback:
+///    - Approach: PlayGyroTick (high-frequency optical clock tick)
+///    - Hover: PlayTargetLock (tactical dual-tone lock sweep)
+///    - Pressed: PlayButtonPress + PlayChannelChord
+///    - Release: PlayRelayClick (mechanical latch snap)
+///    - Cooldown Reject: PlayWarningChirp (combat warning warble)
+/// 3. Physical Touchscreen / Mouse Raycast fallback.
+/// 4. Mechanical button cap depression & floating badge dynamics.
 /// </summary>
 public class HologramButtonController : MonoBehaviour
 {
@@ -30,13 +41,21 @@ public class HologramButtonController : MonoBehaviour
         public Transform floatingBadge;
         public Renderer badgeRenderer;
 
+        // Progressive State Machine
+        public enum ButtonState { Idle, Approach, Hover, Pressed }
+        [HideInInspector] public ButtonState state = ButtonState.Idle;
+
         [HideInInspector] public Vector3 initialCapLocalPos;
         [HideInInspector] public Vector3 initialBadgeLocalPos;
         [HideInInspector] public float baselineLuminance = -1f;
         [HideInInspector] public float currentLuminance = 0f;
+        [HideInInspector] public float innerLuminance = 0f;
+        [HideInInspector] public float outerLuminance = 0f;
         [HideInInspector] public float luminanceDrop = 0f;
+        [HideInInspector] public float netContrast = 0f;
         [HideInInspector] public int triggerFrames = 0;
         [HideInInspector] public bool isOccluded = false;
+        [HideInInspector] public bool isAnimating = false;
         [HideInInspector] public Vector2 cameraImageCoord;
         [HideInInspector] public Material runtimeMat;
         [HideInInspector] public Material badgeRuntimeMat;
@@ -56,11 +75,43 @@ public class HologramButtonController : MonoBehaviour
     [Header("=== Button Rigs ===")]
     [SerializeField] private VirtualButtonRig[] buttons = new VirtualButtonRig[3];
 
-    [Header("=== Physical Finger Occlusion Settings ===")]
+    [Header("=== Optical Sensing Pipeline ===")]
     [Tooltip("Enable optical luminance occlusion so physical fingers touching the card trigger buttons")]
     [SerializeField] private bool enablePhysicalFingerTouch = true;
-    [SerializeField] private float occlusionThreshold = 26f;
+
+    [Header("=== Schmitt Trigger & Hysteresis ===")]
+    [Tooltip("Activation threshold (T_high) in LSB for press commitment")]
+    [SerializeField] private float activationThreshold = 24f;
+    [Tooltip("Deactivation threshold (T_low) in LSB for release commitment")]
+    [SerializeField] private float deactivationThreshold = 12f;
+    [Tooltip("Consecutive frames above T_high required to trigger")]
     [SerializeField] private int debounceFrameRequirement = 2;
+
+    [Header("=== Progressive Hover & Approach Thresholds ===")]
+    [Tooltip("Approach threshold for magnetic badge elevation and high-frequency tick")]
+    [SerializeField] private float approachThreshold = 8f;
+    [Tooltip("Hover threshold for badge pulse and tactical lock tone")]
+    [SerializeField] private float hoverThreshold = 16f;
+
+    [Header("=== Common-Mode Rejection (Global Ambient Reference) ===")]
+    [Tooltip("Local coordinates on ImageTarget for ambient reference patch (Top-Center)")]
+    [SerializeField] private Vector3 referenceLocalPos = new Vector3(0f, 0.001f, 0.035f);
+    [Tooltip("Weight of global ambient luminance drop subtraction [0.0 - 1.0]")]
+    [SerializeField] private float commonModeRejectionWeight = 0.35f;
+
+    [Header("=== Distance-Adaptive Annular Sampling ===")]
+    [Tooltip("Inner sampling kernel radius at far distance (e.g. 0.50m)")]
+    [SerializeField] private int minInnerKernelRadius = 2;
+    [Tooltip("Inner sampling kernel radius at close distance (e.g. 0.15m)")]
+    [SerializeField] private int maxInnerKernelRadius = 4;
+    [Tooltip("Outer annular ring radius offset from inner radius")]
+    [SerializeField] private int annularRingOffset = 4;
+    [SerializeField] private float nearDistance = 0.15f;
+    [SerializeField] private float farDistance = 0.50f;
+
+    [Header("=== Asymmetric Baseline Drift ===")]
+    [Tooltip("Baseline drift lerp rate when idle (adapts to slow natural room lighting)")]
+    [SerializeField] private float baselineAdaptSpeed = 0.5f;
 
     [Header("=== Mechanical Animation Settings ===")]
     [SerializeField] private float depressionDepth = 0.0010f; // 1.0 mm downward stroke (flush with rim at 0.0005m)
@@ -70,16 +121,37 @@ public class HologramButtonController : MonoBehaviour
     // Internal state
     private Camera mainCamera;
     private float lastPressTime = -1f;
+    private float lastWarningSoundTime = -1f;
+    private int activeChannelIndex = -1;
     private bool formatRegistered = false;
     private PixelFormat pixelFormat = PixelFormat.GRAYSCALE;
     private int cameraImageWidth = 0;
     private int cameraImageHeight = 0;
 
+    // Ambient Reference State
+    private float refBaselineLuminance = -1f;
+    private float refCurrentLuminance = 0f;
+    private float refLuminanceDrop = 0f;
+
     private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
+    // Public Getters for Self-Audit and Inspection
     public VirtualButtonRig[] Buttons => buttons;
     public bool IsFormatRegistered => formatRegistered;
+    public float ActivationThreshold => activationThreshold;
+    public float DeactivationThreshold => deactivationThreshold;
+    public float ApproachThreshold => approachThreshold;
+    public float HoverThreshold => hoverThreshold;
+    public Vector3 ReferenceLocalPos => referenceLocalPos;
+    public float CommonModeRejectionWeight => commonModeRejectionWeight;
+    public int MinInnerKernelRadius => minInnerKernelRadius;
+    public int MaxInnerKernelRadius => maxInnerKernelRadius;
+    public float NearDistance => nearDistance;
+    public float FarDistance => farDistance;
+    public float OcclusionThreshold => activationThreshold;
+    public float ButtonCooldown => buttonCooldown;
+    public int DebounceFrameRequirement => debounceFrameRequirement;
 
     private void Awake()
     {
@@ -109,6 +181,7 @@ public class HologramButtonController : MonoBehaviour
         if (videoController != null)
         {
             videoController.OnChannelChanged += HandleChannelChanged;
+            activeChannelIndex = videoController.CurrentChannelIndex;
         }
     }
 
@@ -189,6 +262,9 @@ public class HologramButtonController : MonoBehaviour
         {
             HandlePhysicalFingerOcclusion();
         }
+
+        // 3. Progressive Hover Visual Dynamics (badge magnetic lift & cyber pulse)
+        UpdateHoverVisuals();
     }
 
     #region Screen Input (Mouse / Touch)
@@ -209,7 +285,15 @@ public class HologramButtonController : MonoBehaviour
         }
 
         if (!inputDetected || mainCamera == null) return;
-        if (Time.time - lastPressTime < buttonCooldown) return;
+        if (Time.time - lastPressTime < buttonCooldown)
+        {
+            if (Time.time - lastWarningSoundTime >= 0.25f && audioSynthesizer != null)
+            {
+                lastWarningSoundTime = Time.time;
+                audioSynthesizer.PlayWarningChirp(0.20f);
+            }
+            return;
+        }
 
         Ray ray = mainCamera.ScreenPointToRay(inputPosition);
         if (Physics.Raycast(ray, out RaycastHit hit, 100f))
@@ -227,7 +311,7 @@ public class HologramButtonController : MonoBehaviour
     }
     #endregion
 
-    #region Physical Finger Occlusion (Camera Pixel Sampling)
+    #region Physical Finger Occlusion (Smart Dual-Zone + CMRR Pipeline)
     private void HandlePhysicalFingerOcclusion()
     {
         if (!formatRegistered || VuforiaBehaviour.Instance == null || VuforiaBehaviour.Instance.CameraDevice == null)
@@ -248,71 +332,243 @@ public class HologramButtonController : MonoBehaviour
         cameraImageHeight = image.Height;
         byte[] pixels = image.Pixels;
 
-            for (int i = 0; i < buttons.Length; i++)
+        Transform targetTransform = observerBehaviour != null ? observerBehaviour.transform : transform;
+
+        // 1. Distance-Adaptive Kernel Calculation
+        float camDist = mainCamera != null ? Vector3.Distance(mainCamera.transform.position, targetTransform.position) : 0.35f;
+        float distFactor = Mathf.Clamp01((camDist - nearDistance) / Mathf.Max(0.01f, farDistance - nearDistance));
+        int innerRadius = Mathf.RoundToInt(Mathf.Lerp(maxInnerKernelRadius, minInnerKernelRadius, distFactor));
+        int outerRadius = innerRadius + annularRingOffset;
+
+        // 2. Top-Center Global Ambient Reference Sampling (Common-Mode Rejection)
+        Vector3 refWorldPos = targetTransform.TransformPoint(referenceLocalPos);
+        Vector3 refScreenPoint = mainCamera != null ? mainCamera.WorldToScreenPoint(refWorldPos) : Vector3.zero;
+        if (refScreenPoint.z > 0f)
+        {
+            float normRefX = Mathf.Clamp01(refScreenPoint.x / Screen.width);
+            float normRefY = Mathf.Clamp01(refScreenPoint.y / Screen.height);
+            int refImgX = Mathf.Clamp(Mathf.RoundToInt(normRefX * cameraImageWidth), 2, cameraImageWidth - 3);
+            int refImgY = Mathf.Clamp(Mathf.RoundToInt((1f - normRefY) * cameraImageHeight), 2, cameraImageHeight - 3);
+
+            float refSum = 0f;
+            int refCount = 0;
+            for (int dy = -2; dy <= 2; dy++)
             {
-                var btn = buttons[i];
-                if (btn.buttonRoot == null || mainCamera == null) continue;
-
-                Vector3 screenPoint = mainCamera.WorldToScreenPoint(btn.buttonRoot.position);
-                if (screenPoint.z <= 0) continue; // Behind camera
-
-                // Normalized viewport coords
-                float normX = screenPoint.x / Screen.width;
-                float normY = screenPoint.y / Screen.height;
-
-                int imgX = Mathf.Clamp(Mathf.RoundToInt(normX * cameraImageWidth), 2, cameraImageWidth - 3);
-                int imgY = Mathf.Clamp(Mathf.RoundToInt((1f - normY) * cameraImageHeight), 2, cameraImageHeight - 3);
-
-                btn.cameraImageCoord = new Vector2(imgX, imgY);
-
-                // Sample 5x5 kernel
-                float totalLum = 0f;
-                int count = 0;
-                for (int dy = -2; dy <= 2; dy++)
+                int row = (refImgY + dy) * cameraImageWidth;
+                for (int dx = -2; dx <= 2; dx++)
                 {
-                    int py = imgY + dy;
-                    int rowOffset = py * cameraImageWidth;
-                    for (int dx = -2; dx <= 2; dx++)
+                    refSum += pixels[row + (refImgX + dx)];
+                    refCount++;
+                }
+            }
+            refCurrentLuminance = refCount > 0 ? refSum / refCount : refCurrentLuminance;
+
+            if (refBaselineLuminance < 0f)
+            {
+                refBaselineLuminance = refCurrentLuminance;
+            }
+            else
+            {
+                refBaselineLuminance = Mathf.Lerp(refBaselineLuminance, refCurrentLuminance, Time.deltaTime * baselineAdaptSpeed);
+            }
+            refLuminanceDrop = Mathf.Max(0f, refBaselineLuminance - refCurrentLuminance);
+        }
+
+        // 3. Per-Button Dual-Zone Annular Sampling & Metric Calculation
+        float highestContrast = -999f;
+        int bestCandidate = -1;
+
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            var btn = buttons[i];
+            if (btn.buttonRoot == null || mainCamera == null) continue;
+
+            Vector3 screenPoint = mainCamera.WorldToScreenPoint(btn.buttonRoot.position);
+            if (screenPoint.z <= 0) continue; // Behind camera
+
+            float normX = Mathf.Clamp01(screenPoint.x / Screen.width);
+            float normY = Mathf.Clamp01(screenPoint.y / Screen.height);
+
+            int imgX = Mathf.Clamp(Mathf.RoundToInt(normX * cameraImageWidth), outerRadius + 1, cameraImageWidth - outerRadius - 2);
+            int imgY = Mathf.Clamp(Mathf.RoundToInt((1f - normY) * cameraImageHeight), outerRadius + 1, cameraImageHeight - outerRadius - 2);
+
+            btn.cameraImageCoord = new Vector2(imgX, imgY);
+
+            // Zone A: Inner Kernel (Button Cap)
+            float innerSum = 0f;
+            int innerCount = 0;
+            for (int dy = -innerRadius; dy <= innerRadius; dy++)
+            {
+                int rowOffset = (imgY + dy) * cameraImageWidth;
+                for (int dx = -innerRadius; dx <= innerRadius; dx++)
+                {
+                    innerSum += pixels[rowOffset + (imgX + dx)];
+                    innerCount++;
+                }
+            }
+            float innerAvg = innerCount > 0 ? innerSum / innerCount : 0f;
+            btn.innerLuminance = innerAvg;
+            btn.currentLuminance = innerAvg;
+
+            // Zone B: Outer Annular Ring (Postcard surface around button rim, 8 radial samples)
+            float outerSum = 0f;
+            int outerCount = 0;
+            for (int a = 0; a < 8; a++)
+            {
+                float angle = a * (Mathf.PI * 2f / 8f);
+                int ox = Mathf.Clamp(imgX + Mathf.RoundToInt(Mathf.Cos(angle) * outerRadius), 0, cameraImageWidth - 1);
+                int oy = Mathf.Clamp(imgY + Mathf.RoundToInt(Mathf.Sin(angle) * outerRadius), 0, cameraImageHeight - 1);
+                outerSum += pixels[oy * cameraImageWidth + ox];
+                outerCount++;
+            }
+            float outerAvg = outerCount > 0 ? outerSum / outerCount : innerAvg;
+            btn.outerLuminance = outerAvg;
+
+            // Local Differential Contrast: surrounding ring minus inner cap
+            float localContrast = outerAvg - innerAvg;
+
+            // Common-Mode Rejection: subtract global ambient drop
+            float netMetric = localContrast - (refLuminanceDrop * commonModeRejectionWeight);
+            btn.netContrast = netMetric;
+            btn.luminanceDrop = netMetric;
+
+            // Asymmetric Baseline Drift:
+            // Freeze baseline adaptation whenever finger is approaching or occluding
+            if (btn.baselineLuminance < 0f)
+            {
+                btn.baselineLuminance = innerAvg;
+            }
+            else if (btn.state == VirtualButtonRig.ButtonState.Idle && netMetric < approachThreshold)
+            {
+                btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, innerAvg, Time.deltaTime * baselineAdaptSpeed);
+            }
+
+            // Track candidate for Winner-Take-All competition
+            if (netMetric >= activationThreshold && netMetric > highestContrast)
+            {
+                highestContrast = netMetric;
+                bestCandidate = i;
+            }
+        }
+
+        // 4. Schmitt Trigger Hysteresis & Winner-Take-All State Machine
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            var btn = buttons[i];
+            float metric = btn.netContrast;
+
+            if (btn.state == VirtualButtonRig.ButtonState.Pressed)
+            {
+                // Deactivation hysteresis trip point
+                if (metric < deactivationThreshold)
+                {
+                    btn.state = VirtualButtonRig.ButtonState.Idle;
+                    btn.triggerFrames = 0;
+                    btn.isOccluded = false;
+
+                    // Tactile mechanical release snap
+                    if (audioSynthesizer != null)
                     {
-                        int px = imgX + dx;
-                        totalLum += pixels[rowOffset + px];
-                        count++;
+                        audioSynthesizer.PlayRelayClick(0.30f);
                     }
+                    UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
                 }
-                float avgLum = totalLum / count;
-                btn.currentLuminance = avgLum;
-
-                // Calibrate baseline
-                if (btn.baselineLuminance < 0f)
-                {
-                    btn.baselineLuminance = avgLum;
-                }
-                else
-                {
-                    // Slowly drift baseline to handle ambient lighting changes
-                    btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, avgLum, Time.deltaTime * 0.5f);
-                }
-
-                btn.luminanceDrop = btn.baselineLuminance - avgLum;
-
-                if (btn.luminanceDrop > occlusionThreshold)
+            }
+            else
+            {
+                // Winner-Take-All: Only the candidate with the highest contrast can activate
+                if (metric >= activationThreshold && i == bestCandidate)
                 {
                     btn.triggerFrames++;
-                    if (btn.triggerFrames >= debounceFrameRequirement && !btn.isOccluded)
+                    if (btn.triggerFrames >= debounceFrameRequirement)
                     {
-                        btn.isOccluded = true;
                         if (Time.time - lastPressTime >= buttonCooldown)
                         {
+                            btn.state = VirtualButtonRig.ButtonState.Pressed;
+                            btn.isOccluded = true;
                             ExecuteButtonPress(i);
+                        }
+                        else
+                        {
+                            // In cooldown: trigger warning chirp if not played recently
+                            if (Time.time - lastWarningSoundTime >= 0.25f && audioSynthesizer != null)
+                            {
+                                lastWarningSoundTime = Time.time;
+                                audioSynthesizer.PlayWarningChirp(0.20f);
+                            }
+                        }
+                    }
+                }
+                else if (metric >= hoverThreshold)
+                {
+                    btn.triggerFrames = 0;
+                    if (btn.state != VirtualButtonRig.ButtonState.Hover)
+                    {
+                        btn.state = VirtualButtonRig.ButtonState.Hover;
+                        if (audioSynthesizer != null)
+                        {
+                            audioSynthesizer.PlayTargetLock(0.35f);
+                        }
+                    }
+                }
+                else if (metric >= approachThreshold)
+                {
+                    btn.triggerFrames = 0;
+                    if (btn.state != VirtualButtonRig.ButtonState.Approach)
+                    {
+                        btn.state = VirtualButtonRig.ButtonState.Approach;
+                        if (audioSynthesizer != null)
+                        {
+                            audioSynthesizer.PlayGyroTick(0.30f);
                         }
                     }
                 }
                 else
                 {
                     btn.triggerFrames = 0;
-                    btn.isOccluded = false;
+                    if (btn.state != VirtualButtonRig.ButtonState.Idle)
+                    {
+                        btn.state = VirtualButtonRig.ButtonState.Idle;
+                        btn.isOccluded = false;
+                        UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
+                    }
                 }
             }
+        }
+    }
+    #endregion
+
+    #region Progressive Hover Dynamics
+    private void UpdateHoverVisuals()
+    {
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            var btn = buttons[i];
+            if (btn.floatingBadge == null || btn.isAnimating) continue;
+
+            float targetYOffset = 0f;
+            Color emissionColor = btn.channelIndex == activeChannelIndex ? btn.activeColor * 2.5f : btn.inactiveColor * 0.75f;
+
+            if (btn.state == VirtualButtonRig.ButtonState.Hover)
+            {
+                targetYOffset = 0.0020f; // +2.0mm magnetic lift
+                float pulse = 1f + 0.45f * Mathf.Sin(Time.time * 16f);
+                emissionColor = btn.activeColor * (3.0f * pulse);
+            }
+            else if (btn.state == VirtualButtonRig.ButtonState.Approach)
+            {
+                targetYOffset = 0.0012f; // +1.2mm pre-lift
+                emissionColor = btn.activeColor * 2.8f;
+            }
+
+            Vector3 targetPos = btn.initialBadgeLocalPos + new Vector3(0f, targetYOffset, 0f);
+            btn.floatingBadge.localPosition = Vector3.Lerp(btn.floatingBadge.localPosition, targetPos, Time.deltaTime * 14f);
+
+            if (btn.badgeRuntimeMat != null && btn.badgeRuntimeMat.HasProperty(EmissionColorId))
+            {
+                btn.badgeRuntimeMat.SetColor(EmissionColorId, Color.Lerp(btn.badgeRuntimeMat.GetColor(EmissionColorId), emissionColor, Time.deltaTime * 14f));
+            }
+        }
     }
     #endregion
 
@@ -339,6 +595,7 @@ public class HologramButtonController : MonoBehaviour
     {
         if (index < 0 || index >= buttons.Length) return;
         lastPressTime = Time.time;
+        activeChannelIndex = buttons[index].channelIndex;
 
         Debug.Log($"[HologramButtonController] Activating Channel {index + 1}: {buttons[index].name}");
 
@@ -363,70 +620,79 @@ public class HologramButtonController : MonoBehaviour
     {
         if (btn.buttonCap == null && btn.floatingBadge == null) yield break;
 
+        btn.isAnimating = true;
         Vector3 depressedCapPos = btn.buttonCap != null ? btn.initialCapLocalPos - new Vector3(0f, depressionDepth, 0f) : Vector3.zero;
         Vector3 depressedBadgePos = btn.floatingBadge != null ? btn.initialBadgeLocalPos - new Vector3(0f, depressionDepth, 0f) : Vector3.zero;
 
         Color baseEmission = btn.activeColor;
         Color pulseEmission = btn.activeColor * 4.5f;
 
-        // Downward stroke & badge flare
-        float t = 0f;
-        while (t < 1f)
+        try
         {
-            t += Time.deltaTime * depressionSpeed;
-            float smoothT = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
-
-            if (btn.buttonCap != null)
+            // Downward stroke & badge flare
+            float t = 0f;
+            while (t < 1f)
             {
-                btn.buttonCap.localPosition = Vector3.Lerp(btn.initialCapLocalPos, depressedCapPos, smoothT);
-            }
-            if (btn.floatingBadge != null)
-            {
-                btn.floatingBadge.localPosition = Vector3.Lerp(btn.initialBadgeLocalPos, depressedBadgePos, smoothT);
+                t += Time.deltaTime * depressionSpeed;
+                float smoothT = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
+
+                if (btn.buttonCap != null)
+                {
+                    btn.buttonCap.localPosition = Vector3.Lerp(btn.initialCapLocalPos, depressedCapPos, smoothT);
+                }
+                if (btn.floatingBadge != null)
+                {
+                    btn.floatingBadge.localPosition = Vector3.Lerp(btn.initialBadgeLocalPos, depressedBadgePos, smoothT);
+                }
+
+                // Pulse badge emission intensity
+                if (btn.badgeRuntimeMat != null && btn.badgeRuntimeMat.HasProperty(EmissionColorId))
+                {
+                    btn.badgeRuntimeMat.SetColor(EmissionColorId, Color.Lerp(baseEmission, pulseEmission, smoothT));
+                }
+
+                yield return null;
             }
 
-            // Pulse badge emission intensity
-            if (btn.badgeRuntimeMat != null && btn.badgeRuntimeMat.HasProperty(EmissionColorId))
+            yield return new WaitForSeconds(0.08f);
+
+            // Spring rebound & emission settle
+            t = 0f;
+            while (t < 1f)
             {
-                btn.badgeRuntimeMat.SetColor(EmissionColorId, Color.Lerp(baseEmission, pulseEmission, smoothT));
+                t += Time.deltaTime * (depressionSpeed * 0.75f);
+                float smoothT = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
+
+                if (btn.buttonCap != null)
+                {
+                    btn.buttonCap.localPosition = Vector3.Lerp(depressedCapPos, btn.initialCapLocalPos, smoothT);
+                }
+                if (btn.floatingBadge != null)
+                {
+                    btn.floatingBadge.localPosition = Vector3.Lerp(depressedBadgePos, btn.initialBadgeLocalPos, smoothT);
+                }
+
+                // Settle badge emission intensity
+                if (btn.badgeRuntimeMat != null && btn.badgeRuntimeMat.HasProperty(EmissionColorId))
+                {
+                    btn.badgeRuntimeMat.SetColor(EmissionColorId, Color.Lerp(pulseEmission, baseEmission * 2.5f, smoothT));
+                }
+
+                yield return null;
             }
 
-            yield return null;
+            if (btn.buttonCap != null) btn.buttonCap.localPosition = btn.initialCapLocalPos;
+            if (btn.floatingBadge != null) btn.floatingBadge.localPosition = btn.initialBadgeLocalPos;
         }
-
-        yield return new WaitForSeconds(0.08f);
-
-        // Spring rebound & emission settle
-        t = 0f;
-        while (t < 1f)
+        finally
         {
-            t += Time.deltaTime * (depressionSpeed * 0.75f);
-            float smoothT = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
-
-            if (btn.buttonCap != null)
-            {
-                btn.buttonCap.localPosition = Vector3.Lerp(depressedCapPos, btn.initialCapLocalPos, smoothT);
-            }
-            if (btn.floatingBadge != null)
-            {
-                btn.floatingBadge.localPosition = Vector3.Lerp(depressedBadgePos, btn.initialBadgeLocalPos, smoothT);
-            }
-
-            // Settle badge emission intensity
-            if (btn.badgeRuntimeMat != null && btn.badgeRuntimeMat.HasProperty(EmissionColorId))
-            {
-                btn.badgeRuntimeMat.SetColor(EmissionColorId, Color.Lerp(pulseEmission, baseEmission * 2.5f, smoothT));
-            }
-
-            yield return null;
+            btn.isAnimating = false;
         }
-
-        if (btn.buttonCap != null) btn.buttonCap.localPosition = btn.initialCapLocalPos;
-        if (btn.floatingBadge != null) btn.floatingBadge.localPosition = btn.initialBadgeLocalPos;
     }
 
     private void HandleChannelChanged(int activeIndex, HologramVideoController.VideoChannelConfig config)
     {
+        activeChannelIndex = activeIndex;
         for (int i = 0; i < buttons.Length; i++)
         {
             UpdateButtonGlow(i, buttons[i].channelIndex == activeIndex);

@@ -340,6 +340,67 @@ public static class HologramSelfAudit
             sb.AppendLine("  [3.7] Expanding Shockwave Geometry: FAIL");
         }
 
+        // [3.8] Schmitt Trigger Hysteresis & Dead-Band
+        totalChecks++;
+        bool schmittPass = btnController != null &&
+                           btnController.ActivationThreshold > btnController.DeactivationThreshold &&
+                           (btnController.ActivationThreshold - btnController.DeactivationThreshold) >= 8f;
+        if (schmittPass)
+        {
+            passedChecks++;
+            sb.AppendLine($"  [3.8] Schmitt Trigger Hysteresis: PASS (T_high={btnController.ActivationThreshold:F0} LSB, T_low={btnController.DeactivationThreshold:F0} LSB, Dead-Band={btnController.ActivationThreshold - btnController.DeactivationThreshold:F0} LSB >= 8 LSB)");
+        }
+        else
+        {
+            sb.AppendLine("  [3.8] Schmitt Trigger Hysteresis: FAIL (Improper hysteresis dead-band)");
+        }
+
+        // [3.9] Progressive Hover State Hierarchy
+        totalChecks++;
+        bool hoverHierarchyPass = btnController != null &&
+                                  btnController.ApproachThreshold < btnController.HoverThreshold &&
+                                  btnController.HoverThreshold < btnController.ActivationThreshold;
+        if (hoverHierarchyPass)
+        {
+            passedChecks++;
+            sb.AppendLine($"  [3.9] Progressive Hover Hierarchy: PASS (Approach: {btnController.ApproachThreshold:F0} < Hover: {btnController.HoverThreshold:F0} < Press: {btnController.ActivationThreshold:F0} LSB)");
+        }
+        else
+        {
+            sb.AppendLine("  [3.9] Progressive Hover Hierarchy: FAIL (Threshold ordering invalid)");
+        }
+
+        // [3.10] Common-Mode Rejection Ambient Reference
+        totalChecks++;
+        bool cmrrPass = btnController != null &&
+                        btnController.ReferenceLocalPos.z > 0.01f &&
+                        btnController.CommonModeRejectionWeight > 0.1f;
+        if (cmrrPass)
+        {
+            passedChecks++;
+            sb.AppendLine($"  [3.10] Common-Mode Rejection: PASS (Top-Center Ref: {btnController.ReferenceLocalPos:F3}, Weight: {btnController.CommonModeRejectionWeight:F2})");
+        }
+        else
+        {
+            sb.AppendLine("  [3.10] Common-Mode Rejection: FAIL (Reference patch or weight not configured)");
+        }
+
+        // [3.11] Distance-Adaptive Kernel Range
+        totalChecks++;
+        bool kernelRangePass = btnController != null &&
+                               btnController.MinInnerKernelRadius >= 2 &&
+                               btnController.MaxInnerKernelRadius >= btnController.MinInnerKernelRadius &&
+                               btnController.NearDistance < btnController.FarDistance;
+        if (kernelRangePass)
+        {
+            passedChecks++;
+            sb.AppendLine($"  [3.11] Distance-Adaptive Kernel: PASS (Kernel: {btnController.MinInnerKernelRadius}-{btnController.MaxInnerKernelRadius}px radius, Range: {btnController.NearDistance:F2}m - {btnController.FarDistance:F2}m)");
+        }
+        else
+        {
+            sb.AppendLine("  [3.11] Distance-Adaptive Kernel: FAIL (Kernel parameters invalid)");
+        }
+
         // =========================================================================
         // SECTION 4: SILENT VIDEO PLAYBACK & TIMESTAMPS
         // =========================================================================
