@@ -299,7 +299,6 @@ public class HologramAudioSynthesizer : MonoBehaviour
     public void PlayChannelGlitch()
     {
         PlayVoice(channelGlitchClip, 0.75f, Random.Range(0.95f, 1.05f));
-        PlayGlitchStatic();
         InjectEqualizerImpulse(0.85f, 2, 8);
     }
 
@@ -367,15 +366,15 @@ public class HologramAudioSynthesizer : MonoBehaviour
 
     /// <summary>
     /// Plays Holographic Glitch Static Burst SFX:
-    /// Pink noise burst with sample-and-hold gating and bitcrushed harmonics.
+    /// Subtle high-frequency micro-digital pixel glitch.
     /// </summary>
     public void PlayGlitchStatic()
     {
         if (glitchStaticClip == null && !isInitialized) InitializeAudio();
         if (glitchStaticClip != null)
         {
-            PlayVoice(glitchStaticClip, 0.82f, Random.Range(0.94f, 1.06f));
-            InjectEqualizerImpulse(0.90f, 2, 14);
+            PlayVoice(glitchStaticClip, 0.35f * ambienceVolume, Random.Range(0.96f, 1.04f));
+            InjectEqualizerImpulse(0.50f, 8, 14);
         }
     }
 
@@ -887,53 +886,49 @@ public class HologramAudioSynthesizer : MonoBehaviour
                 // Channel 1 (Amber - Mainframe Futuristic UI):
                 // Dominated by Stepped Digital Arpeggios, Relay Matrix Clicks, Dual-Tone Parities, Harmonic Pings, and Tape-Head pulses.
                 // Melodic, calculating, warm retro-future supercomputer feel.
-                if (roll < 0.26f)
+                if (roll < 0.28f)
                 {
                     PlaySteppedArpeggio();
                 }
-                else if (roll < 0.52f)
+                else if (roll < 0.54f)
                 {
                     PlayRelayClick();
                 }
-                else if (roll < 0.72f)
+                else if (roll < 0.76f)
                 {
                     PlayDataChirp();
                 }
-                else if (roll < 0.88f)
+                else if (roll < 0.90f)
                 {
                     PlayDigitalPing();
                 }
-                else if (roll < 0.95f)
-                {
-                    PlayGranularChatter();
-                }
                 else
                 {
-                    PlayButtonPress();
+                    PlayGranularChatter();
                 }
                 break;
 
             case 2:
                 // Channel 2 (Red - Electronic Warfare Screen 03):
-                // Dominated by Glitch Static bursts, Combat Warning chirps, Voltage Spikes, Thermal Plasma crackles, Sub-Harmonic Thumps, and Stutter telemetry.
-                // Aggressive, chaotic, high-energy electronic warfare feel.
-                if (roll < 0.24f)
-                {
-                    PlayGlitchStatic();
-                }
-                else if (roll < 0.46f)
-                {
-                    PlayWarningChirp();
-                }
-                else if (roll < 0.64f)
+                // Dominated by Combat Warning chirps, Voltage Spikes, Thermal Plasma crackles, Sub-Harmonic Thumps, and Encrypted Telemetry.
+                // Aggressive, high-energy electronic warfare feel with zero snare or noise blasts.
+                if (roll < 0.28f)
                 {
                     PlayVoltageSpike();
                 }
-                else if (roll < 0.80f)
+                else if (roll < 0.52f)
+                {
+                    PlayWarningChirp();
+                }
+                else if (roll < 0.70f)
                 {
                     PlayThermalDischarge();
                 }
-                else if (roll < 0.90f)
+                else if (roll < 0.86f)
+                {
+                    PlayNeuralUplink();
+                }
+                else if (roll < 0.94f)
                 {
                     PlaySubThump();
                 }
@@ -1648,59 +1643,28 @@ public class HologramAudioSynthesizer : MonoBehaviour
         return clip;
     }
 
-    // Holographic Glitch Static Burst: Pink noise burst with sample-and-hold gating and bitcrushed harmonics
+    // Holographic Glitch Static: Delicate high-frequency micro-digital pixel glitch pip (zero broadband noise / zero snare body)
     private AudioClip SynthesizeGlitchStatic(float duration)
     {
-        int sampleCount = Mathf.RoundToInt(SAMPLE_RATE * duration);
+        float microDuration = 0.020f;
+        int sampleCount = Mathf.RoundToInt(SAMPLE_RATE * microDuration);
         float[] samples = new float[sampleCount];
-
-        // Paul Kellet refined 3-pole pink noise filter generator
-        float b0 = 0f, b1 = 0f, b2 = 0f, b3 = 0f, b4 = 0f, b5 = 0f, b6 = 0f;
-
-        float heldSample = 0f;
-        int holdCounter = 0;
-        int holdInterval = 14;
 
         for (int i = 0; i < sampleCount; i++)
         {
             float t = (float)i / SAMPLE_RATE;
             float progress = (float)i / sampleCount;
 
-            // White noise source
-            float white = (Random.value * 2f - 1f);
+            // Pure high-frequency digital stepped telemetry pips (5800Hz - 7400Hz)
+            float freq = Mathf.Lerp(7400f, 4800f, Mathf.Pow(progress, 1.4f));
+            float carrier = Mathf.Sin(2f * Mathf.PI * freq * t) * 0.70f +
+                            Mathf.Sin(2f * Mathf.PI * (freq * 1.5f) * t) * 0.20f;
 
-            // Pink noise filter update (rich 1/f spectral slope)
-            b0 = 0.99886f * b0 + white * 0.0555179f;
-            b1 = 0.99332f * b1 + white * 0.0750759f;
-            b2 = 0.96900f * b2 + white * 0.1538520f;
-            b3 = 0.86650f * b3 + white * 0.3104856f;
-            b4 = 0.55000f * b4 + white * 0.5329522f;
-            b5 = -0.7616f * b5 - white * 0.0168980f;
-            float pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362f) * 0.12f;
-            b6 = white * 0.115926f;
+            // Micro-attack (1ms) + steep exponential ring dissipation (zero sustain, zero low noise)
+            float attack = (t < 0.001f) ? (t / 0.001f) : 1.0f;
+            float env = attack * Mathf.Exp(-28f * progress);
 
-            // Sample-and-Hold decimation / gating
-            if (holdCounter <= 0)
-            {
-                heldSample = pink;
-                holdInterval = Random.Range(8, 28);
-                holdCounter = holdInterval;
-            }
-            holdCounter--;
-
-            // Bitcrush / harmonic quantization (5-bit steps)
-            float steps = 16f;
-            float crushed = Mathf.Round(heldSample * steps) / steps;
-
-            // Scanline sync dropout stutter (50Hz gated modulation)
-            float stutter = (Mathf.Sin(2f * Mathf.PI * 50f * t) > -0.2f) ? 1.0f : 0.08f;
-
-            // Fast transient attack + shaped power release
-            float attack = (t < 0.004f) ? (t / 0.004f) : 1.0f;
-            float env = attack * Mathf.Pow(1.0f - progress, 1.8f);
-
-            float outSample = (crushed * 0.75f + pink * 0.25f) * stutter * env * 1.5f;
-            samples[i] = Mathf.Clamp((float)System.Math.Tanh(outSample) * 0.90f, -1f, 1f);
+            samples[i] = Mathf.Clamp(carrier * env * 0.35f, -1f, 1f);
         }
 
         AudioClip clip = AudioClip.Create("Holo_GlitchStatic", sampleCount, 1, SAMPLE_RATE, false);
@@ -2011,10 +1975,11 @@ public class HologramAudioSynthesizer : MonoBehaviour
         return clip;
     }
 
-    // Mainframe Relay Matrix Click: Crisp tactile mechanical-electronic relay latching click
+    // Mainframe Relay Matrix Click: Crisp delicate optical-electronic relay latching click (pure high frequencies, zero drum resonance)
     private AudioClip SynthesizeRelayClick(float duration)
     {
-        int sampleCount = Mathf.RoundToInt(SAMPLE_RATE * duration);
+        float microDuration = 0.030f;
+        int sampleCount = Mathf.RoundToInt(SAMPLE_RATE * microDuration);
         float[] samples = new float[sampleCount];
 
         for (int i = 0; i < sampleCount; i++)
@@ -2022,32 +1987,23 @@ public class HologramAudioSynthesizer : MonoBehaviour
             float t = (float)i / SAMPLE_RATE;
             float progress = (float)i / sampleCount;
 
-            // Solenoid magnetic armature impulse (0 - 3.5ms)
-            float armature = 0f;
-            if (t < 0.0035f)
-            {
-                float ap = t / 0.0035f;
-                float freq = Mathf.Lerp(900f, 350f, ap);
-                armature = Mathf.Sin(2f * Mathf.PI * freq * t) * (1f - ap);
-            }
-
-            // Mechanical leaf-spring contact closure latch at 5ms
+            // Optical micro-latch contact at 2ms (3800Hz and 7600Hz crystal ping)
             float contact = 0f;
-            if (t >= 0.005f)
+            if (t >= 0.002f)
             {
-                float cp = (t - 0.005f);
-                float ping = Mathf.Sin(2f * Mathf.PI * 3400f * cp) * 0.65f +
-                             Mathf.Sin(2f * Mathf.PI * 6800f * cp) * 0.25f;
-                contact = ping * Mathf.Exp(-55f * cp);
+                float cp = (t - 0.002f);
+                float ping = Mathf.Sin(2f * Mathf.PI * 3800f * cp) * 0.70f +
+                             Mathf.Sin(2f * Mathf.PI * 7600f * cp) * 0.25f;
+                contact = ping * Mathf.Exp(-65f * cp);
             }
 
-            // Micro-snap transient
-            float snap = (t < 0.001f || (t > 0.005f && t < 0.006f)) ? (Random.value * 2f - 1f) * 0.35f : 0f;
+            // High-frequency micro-snap in first 0.8ms
+            float snap = (t < 0.0008f) ? (Random.value * 2f - 1f) * 0.15f : 0f;
 
-            float env = Mathf.Exp(-24f * progress);
-            float total = (armature * 0.55f + contact * 0.80f + snap) * env;
+            float env = Mathf.Exp(-28f * progress);
+            float total = (contact + snap) * env;
 
-            samples[i] = Mathf.Clamp((float)System.Math.Tanh(total * 1.6f) * 0.88f, -1f, 1f);
+            samples[i] = Mathf.Clamp(total * 0.60f, -1f, 1f);
         }
 
         AudioClip clip = AudioClip.Create("Holo_RelayClick", sampleCount, 1, SAMPLE_RATE, false);

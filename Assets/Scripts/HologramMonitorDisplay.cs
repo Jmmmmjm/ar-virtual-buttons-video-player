@@ -954,11 +954,6 @@ public class HologramMonitorDisplay : MonoBehaviour
 
             if (isPoweredOn && videoController != null && videoController.IsPlaying && transitionCoroutine == null)
             {
-                if (audioSynthesizer != null)
-                {
-                    audioSynthesizer.PlayGlitchStatic();
-                }
-
                 float burstDuration = Random.Range(0.12f, 0.18f);
                 float burstElapsed = 0f;
                 float burstIntensity = Random.Range(0.25f, 0.42f);

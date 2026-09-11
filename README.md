@@ -55,7 +55,7 @@ Point your camera at the physical tabletop marker (`postcard.png`) to materializ
 * **Three Channel-Specific Soundscapes**:
   * **Channel 0 (Cyan - Tactical CyberTech)**: $432\text{ Hz}$ crystalline quantum resonance drone with target locks, gyro-ticks, and neural cipher telemetry.
   * **Channel 1 (Amber - Mainframe Futuristic UI)**: $110\text{ Hz} / 220\text{ Hz}$ warm analog mainframe hum with stepped digital arpeggios and relay clicks.
-  * **Channel 2 (Red - Electronic Warfare Screen 03)**: $65\text{ Hz} / 130\text{ Hz}$ electric battle grid drone with glitch static bursts, warning sirens, and sub-harmonic thumps.
+  * **Channel 2 (Red - Electronic Warfare Screen 03)**: $65\text{ Hz} / 130\text{ Hz}$ electric battle grid drone with high-voltage arc spikes, combat warning sirens, thermal plasma crackles, and sub-harmonic thumps.
 * **16-Band Real-Time Spectrum Equalizer**: Live audio analysis feeds a physical 16-bar equalizer array positioned directly beneath the floating monitor, bouncing with spring-damper transient responsiveness.
 
 ---
@@ -101,7 +101,7 @@ The project includes an automated test runner (`Assets/Editor/HologramSelfAudit.
 ================================================================================
 === AR HOLOGRAM VIDEO MONITOR & VIRTUAL BUTTONS: COMPREHENSIVE SELF-AUDIT ===
 ================================================================================
-Audit Timestamp: 2026-09-11 14:02:21
+Audit Timestamp: 2026-09-11 14:06:14
 
 --- SECTION 1: ASSET, VIDEO & SHADER INTEGRITY ---
   [1.1] ImageTarget Texture (Assets/postcard.png): PASS (Found)
