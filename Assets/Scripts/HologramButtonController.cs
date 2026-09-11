@@ -8,12 +8,12 @@ using Vuforia;
 /// Hologram Interactive Virtual Button Controller.
 /// Provides high-performance, enterprise-grade smart button detection:
 /// 1. Optical Sensing Pipeline:
-///    - Throttled sampling (~30Hz) aligned with camera sensor refresh rate for zero frame drops.
-///    - Baseline-subtracted differential contrast: ΔInner - ΔOuter (cancels shadows and card artwork).
+///    - Direct optical finger occlusion: ΔL = L_baseline - L_current (50-150 LSB signal).
+///    - Throttled sampling (~30Hz) aligned with camera sensor refresh rate for smooth 60fps rendering.
 ///    - Top-Center global ambient reference patch for Common-Mode Rejection (CMRR).
-///    - Asymmetric baseline drift (freezes adaptation during interaction to prevent resting finger corruption).
+///    - Asymmetric baseline drift: freezes adaptation whenever a finger interacts to prevent resting finger corruption.
 ///    - Distance-adaptive kernel scaling (scales sampling radii based on camera distance).
-///    - Full-spectrum Schmitt trigger hysteresis across all states (Approach, Hover, Press) to eliminate noise chatter.
+///    - Schmitt trigger hysteresis (T_high=24, T_low=12) across all states to eliminate noise chatter.
 ///    - Winner-take-all spatial arbitration (prevents hand swipes from multi-triggering).
 /// 2. Multi-Stage Tactile Audio Feedback:
 ///    - Approach: PlayGyroTick (high-frequency optical clock tick)
@@ -48,8 +48,6 @@ public class HologramButtonController : MonoBehaviour
         [HideInInspector] public Vector3 initialCapLocalPos;
         [HideInInspector] public Vector3 initialBadgeLocalPos;
         [HideInInspector] public float baselineLuminance = -1f;
-        [HideInInspector] public float innerBaseline = -1f;
-        [HideInInspector] public float outerBaseline = -1f;
         [HideInInspector] public float currentLuminance = 0f;
         [HideInInspector] public float innerLuminance = 0f;
         [HideInInspector] public float outerLuminance = 0f;
@@ -101,7 +99,7 @@ public class HologramButtonController : MonoBehaviour
     [Tooltip("Local coordinates on ImageTarget for ambient reference patch (Top-Center)")]
     [SerializeField] private Vector3 referenceLocalPos = new Vector3(0f, 0.001f, 0.035f);
     [Tooltip("Weight of global ambient luminance drop subtraction [0.0 - 1.0]")]
-    [SerializeField] private float commonModeRejectionWeight = 0.35f;
+    [SerializeField] private float commonModeRejectionWeight = 0.25f;
 
     [Header("=== Distance-Adaptive Annular Sampling ===")]
     [Tooltip("Inner sampling kernel radius at far distance (e.g. 0.50m)")]
@@ -317,7 +315,7 @@ public class HologramButtonController : MonoBehaviour
     }
     #endregion
 
-    #region Physical Finger Occlusion (Optimized Dual-Zone + CMRR Pipeline)
+    #region Physical Finger Occlusion (Direct Optical Pipeline + Common-Mode Shield)
     private void HandlePhysicalFingerOcclusion()
     {
         if (!formatRegistered || VuforiaBehaviour.Instance == null || VuforiaBehaviour.Instance.CameraDevice == null)
@@ -344,7 +342,6 @@ public class HologramButtonController : MonoBehaviour
         float camDist = mainCamera != null ? Vector3.Distance(mainCamera.transform.position, targetTransform.position) : 0.35f;
         float distFactor = Mathf.Clamp01((camDist - nearDistance) / Mathf.Max(0.01f, farDistance - nearDistance));
         int innerRadius = Mathf.RoundToInt(Mathf.Lerp(maxInnerKernelRadius, minInnerKernelRadius, distFactor));
-        int outerRadius = innerRadius + annularRingOffset;
 
         // 2. Top-Center Global Ambient Reference Sampling (Common-Mode Rejection)
         Vector3 refWorldPos = targetTransform.TransformPoint(referenceLocalPos);
@@ -380,8 +377,8 @@ public class HologramButtonController : MonoBehaviour
             refLuminanceDrop = Mathf.Max(0f, refBaselineLuminance - refCurrentLuminance);
         }
 
-        // 3. Per-Button Dual-Zone Annular Sampling with Baseline-Subtracted Differential Contrast
-        float highestContrast = -999f;
+        // 3. Per-Button Optical Occlusion Sampling
+        float highestDrop = -999f;
         int bestCandidate = -1;
 
         for (int i = 0; i < buttons.Length; i++)
@@ -395,12 +392,12 @@ public class HologramButtonController : MonoBehaviour
             float normX = Mathf.Clamp01(screenPoint.x / Screen.width);
             float normY = Mathf.Clamp01(screenPoint.y / Screen.height);
 
-            int imgX = Mathf.Clamp(Mathf.RoundToInt(normX * cameraImageWidth), outerRadius + 1, cameraImageWidth - outerRadius - 2);
-            int imgY = Mathf.Clamp(Mathf.RoundToInt((1f - normY) * cameraImageHeight), outerRadius + 1, cameraImageHeight - outerRadius - 2);
+            int imgX = Mathf.Clamp(Mathf.RoundToInt(normX * cameraImageWidth), innerRadius + 1, cameraImageWidth - innerRadius - 2);
+            int imgY = Mathf.Clamp(Mathf.RoundToInt((1f - normY) * cameraImageHeight), innerRadius + 1, cameraImageHeight - innerRadius - 2);
 
             btn.cameraImageCoord = new Vector2(imgX, imgY);
 
-            // Zone A: Inner Kernel (Button Cap)
+            // Sample Button Cap Kernel (distance-adaptive radius)
             float innerSum = 0f;
             int innerCount = 0;
             for (int dy = -innerRadius; dy <= innerRadius; dy++)
@@ -416,117 +413,80 @@ public class HologramButtonController : MonoBehaviour
             btn.innerLuminance = innerAvg;
             btn.currentLuminance = innerAvg;
 
-            // Zone B: Outer Annular Ring (Postcard surface around button rim, 8 radial samples)
-            float outerSum = 0f;
-            int outerCount = 0;
-            for (int a = 0; a < 8; a++)
+            // Calibrate Baseline
+            if (btn.baselineLuminance < 0f)
             {
-                float angle = a * (Mathf.PI * 2f / 8f);
-                int ox = Mathf.Clamp(imgX + Mathf.RoundToInt(Mathf.Cos(angle) * outerRadius), 0, cameraImageWidth - 1);
-                int oy = Mathf.Clamp(imgY + Mathf.RoundToInt(Mathf.Sin(angle) * outerRadius), 0, cameraImageHeight - 1);
-                outerSum += pixels[oy * cameraImageWidth + ox];
-                outerCount++;
-            }
-            float outerAvg = outerCount > 0 ? outerSum / outerCount : innerAvg;
-            btn.outerLuminance = outerAvg;
-
-            // Calibrate Baselines Independently
-            if (btn.innerBaseline < 0f)
-            {
-                btn.innerBaseline = innerAvg;
-                btn.outerBaseline = outerAvg;
                 btn.baselineLuminance = innerAvg;
             }
-            else if (btn.state == VirtualButtonRig.ButtonState.Idle)
+            else if (btn.state == VirtualButtonRig.ButtonState.Idle && btn.luminanceDrop < approachThreshold)
             {
-                // Slowly drift baselines when idle to adapt to slow ambient lighting shifts
-                btn.innerBaseline = Mathf.Lerp(btn.innerBaseline, innerAvg, Time.deltaTime * baselineAdaptSpeed);
-                btn.outerBaseline = Mathf.Lerp(btn.outerBaseline, outerAvg, Time.deltaTime * baselineAdaptSpeed);
-                btn.baselineLuminance = btn.innerBaseline;
+                // Slowly drift baseline ONLY when idle and unoccluded
+                btn.baselineLuminance = Mathf.Lerp(btn.baselineLuminance, innerAvg, Time.deltaTime * baselineAdaptSpeed);
             }
 
-            // Differential Occlusion Calculation:
-            // ΔInner = how much inner cap darkened compared to its own baseline
-            // ΔOuter = how much surrounding ring darkened compared to its own baseline
-            float deltaInner = Mathf.Max(0f, btn.innerBaseline - innerAvg);
-            float deltaOuter = Mathf.Max(0f, btn.outerBaseline - outerAvg);
+            // Raw Luminance Drop (Physical finger blocking camera pixels)
+            float rawDrop = Mathf.Max(0f, btn.baselineLuminance - innerAvg);
 
-            // True Differential Contrast: Finger on cap darkens inner while outer stays illuminated
-            float localContrast = deltaInner - deltaOuter;
-
-            // Common-Mode Rejection: subtract global ambient drop
-            float netMetric = localContrast - (refLuminanceDrop * commonModeRejectionWeight);
-            btn.netContrast = netMetric;
+            // Subtract global ambient drop (CMRR) with safety clamp
+            float netMetric = rawDrop - Mathf.Min(rawDrop * 0.4f, refLuminanceDrop * commonModeRejectionWeight);
             btn.luminanceDrop = netMetric;
+            btn.netContrast = netMetric;
 
-            // Track candidate for Winner-Take-All competition
-            if (netMetric >= activationThreshold && netMetric > highestContrast)
+            // Winner-Take-All competition
+            if (netMetric >= activationThreshold && netMetric > highestDrop)
             {
-                highestContrast = netMetric;
+                highestDrop = netMetric;
                 bestCandidate = i;
             }
         }
 
-        // 4. Multi-Tier Schmitt Trigger Hysteresis & Winner-Take-All State Machine
+        // 4. Schmitt Trigger Hysteresis & Winner-Take-All State Machine
         for (int i = 0; i < buttons.Length; i++)
         {
             var btn = buttons[i];
-            float metric = btn.netContrast;
+            float metric = btn.luminanceDrop;
 
-            switch (btn.state)
+            if (btn.state == VirtualButtonRig.ButtonState.Pressed)
             {
-                case VirtualButtonRig.ButtonState.Pressed:
-                    // Deactivation hysteresis trip point (12 LSB)
-                    if (metric < deactivationThreshold)
-                    {
-                        btn.state = VirtualButtonRig.ButtonState.Idle;
-                        btn.triggerFrames = 0;
-                        btn.isOccluded = false;
+                // Deactivation hysteresis trip point (12 LSB)
+                if (metric < deactivationThreshold)
+                {
+                    btn.state = VirtualButtonRig.ButtonState.Idle;
+                    btn.triggerFrames = 0;
+                    btn.isOccluded = false;
 
-                        if (audioSynthesizer != null)
-                        {
-                            audioSynthesizer.PlayRelayClick(0.30f);
-                        }
-                        UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
-                    }
-                    break;
-
-                case VirtualButtonRig.ButtonState.Hover:
-                    if (metric >= activationThreshold && i == bestCandidate)
+                    if (audioSynthesizer != null)
                     {
-                        btn.triggerFrames++;
-                        if (btn.triggerFrames >= debounceFrameRequirement)
-                        {
-                            if (Time.time - lastPressTime >= buttonCooldown)
-                            {
-                                btn.state = VirtualButtonRig.ButtonState.Pressed;
-                                btn.isOccluded = true;
-                                ExecuteButtonPress(i);
-                            }
-                            else if (Time.time - lastWarningSoundTime >= 0.25f && audioSynthesizer != null)
-                            {
-                                lastWarningSoundTime = Time.time;
-                                audioSynthesizer.PlayWarningChirp(0.20f);
-                            }
-                        }
+                        audioSynthesizer.PlayRelayClick(0.30f);
                     }
-                    else if (metric < (hoverThreshold - 4f)) // Hysteresis exit: 12 LSB
+                    UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
+                }
+            }
+            else
+            {
+                // Any state (Idle, Approach, Hover) can directly trigger Press if above threshold
+                if (metric >= activationThreshold && i == bestCandidate)
+                {
+                    btn.triggerFrames++;
+                    if (btn.triggerFrames >= debounceFrameRequirement)
                     {
-                        btn.triggerFrames = 0;
-                        if (metric >= approachThreshold)
+                        if (Time.time - lastPressTime >= buttonCooldown)
                         {
-                            btn.state = VirtualButtonRig.ButtonState.Approach;
+                            btn.state = VirtualButtonRig.ButtonState.Pressed;
+                            btn.isOccluded = true;
+                            ExecuteButtonPress(i);
                         }
-                        else
+                        else if (Time.time - lastWarningSoundTime >= 0.25f && audioSynthesizer != null)
                         {
-                            btn.state = VirtualButtonRig.ButtonState.Idle;
-                            UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
+                            lastWarningSoundTime = Time.time;
+                            audioSynthesizer.PlayWarningChirp(0.20f);
                         }
                     }
-                    break;
-
-                case VirtualButtonRig.ButtonState.Approach:
-                    if (metric >= hoverThreshold)
+                }
+                else if (metric >= hoverThreshold)
+                {
+                    btn.triggerFrames = 0;
+                    if (btn.state != VirtualButtonRig.ButtonState.Hover)
                     {
                         btn.state = VirtualButtonRig.ButtonState.Hover;
                         if (audioSynthesizer != null)
@@ -534,42 +494,11 @@ public class HologramButtonController : MonoBehaviour
                             audioSynthesizer.PlayTargetLock(0.35f);
                         }
                     }
-                    else if (metric < (approachThreshold - 3f)) // Hysteresis exit: 5 LSB
-                    {
-                        btn.state = VirtualButtonRig.ButtonState.Idle;
-                        UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
-                    }
-                    break;
-
-                case VirtualButtonRig.ButtonState.Idle:
-                default:
-                    if (metric >= activationThreshold && i == bestCandidate)
-                    {
-                        btn.triggerFrames++;
-                        if (btn.triggerFrames >= debounceFrameRequirement)
-                        {
-                            if (Time.time - lastPressTime >= buttonCooldown)
-                            {
-                                btn.state = VirtualButtonRig.ButtonState.Pressed;
-                                btn.isOccluded = true;
-                                ExecuteButtonPress(i);
-                            }
-                            else if (Time.time - lastWarningSoundTime >= 0.25f && audioSynthesizer != null)
-                            {
-                                lastWarningSoundTime = Time.time;
-                                audioSynthesizer.PlayWarningChirp(0.20f);
-                            }
-                        }
-                    }
-                    else if (metric >= hoverThreshold)
-                    {
-                        btn.state = VirtualButtonRig.ButtonState.Hover;
-                        if (audioSynthesizer != null)
-                        {
-                            audioSynthesizer.PlayTargetLock(0.35f);
-                        }
-                    }
-                    else if (metric >= approachThreshold)
+                }
+                else if (metric >= approachThreshold)
+                {
+                    btn.triggerFrames = 0;
+                    if (btn.state != VirtualButtonRig.ButtonState.Approach)
                     {
                         btn.state = VirtualButtonRig.ButtonState.Approach;
                         if (audioSynthesizer != null)
@@ -577,7 +506,17 @@ public class HologramButtonController : MonoBehaviour
                             audioSynthesizer.PlayGyroTick(0.30f);
                         }
                     }
-                    break;
+                }
+                else if (metric < (approachThreshold - 3f)) // Hysteresis exit: 5 LSB
+                {
+                    btn.triggerFrames = 0;
+                    if (btn.state != VirtualButtonRig.ButtonState.Idle)
+                    {
+                        btn.state = VirtualButtonRig.ButtonState.Idle;
+                        btn.isOccluded = false;
+                        UpdateButtonGlow(i, btn.channelIndex == activeChannelIndex);
+                    }
+                }
             }
         }
     }
