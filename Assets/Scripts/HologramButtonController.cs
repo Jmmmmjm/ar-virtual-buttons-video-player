@@ -151,6 +151,7 @@ public class HologramButtonController : MonoBehaviour
     public float CommonModeRejectionWeight => commonModeRejectionWeight;
     public int MinInnerKernelRadius => minInnerKernelRadius;
     public int MaxInnerKernelRadius => maxInnerKernelRadius;
+    public int AnnularRingOffset => annularRingOffset;
     public float NearDistance => nearDistance;
     public float FarDistance => farDistance;
     public float OcclusionThreshold => activationThreshold;
