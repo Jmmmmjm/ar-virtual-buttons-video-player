@@ -22,9 +22,9 @@ public class HologramAudioSynthesizer : MonoBehaviour
     [Header("=== Voice Pool & Audio Settings ===")]
     [SerializeField] private AudioSource audioSource;
     [SerializeField] [Range(2, 16)] private int voicePoolSize = 8;
-    [SerializeField] [Range(0f, 1f)] private float masterVolume = 0.90f;
-    [SerializeField] [Range(0f, 1f)] private float ambienceVolume = 0.35f;
-    [SerializeField] [Range(0f, 1f)] private float humVolume = 0.18f;
+    [SerializeField] [Range(0f, 1f)] private float masterVolume = 0.70f;
+    [SerializeField] [Range(0f, 1f)] private float ambienceVolume = 0.25f;
+    [SerializeField] [Range(0f, 1f)] private float humVolume = 0.15f;
 
     // Procedural Audio Clips
     private AudioClip buttonPressClip;
@@ -292,22 +292,21 @@ public class HologramAudioSynthesizer : MonoBehaviour
     #region Public Playback & Telemetry Triggers
     public void PlayButtonPress()
     {
-        PlayVoice(buttonPressClip, 0.85f, Random.Range(0.96f, 1.04f));
-        InjectEqualizerImpulse(0.70f, 6, 12);
+        PlayVoice(buttonPressClip, 0.45f, Random.Range(0.96f, 1.04f));
+        InjectEqualizerImpulse(0.60f, 6, 12);
     }
 
     public void PlayChannelGlitch()
     {
-        PlayVoice(channelGlitchClip, 0.75f, Random.Range(0.95f, 1.05f));
-        InjectEqualizerImpulse(0.85f, 2, 8);
+        PlayVoice(channelGlitchClip, 0.40f, Random.Range(0.95f, 1.05f));
+        InjectEqualizerImpulse(0.70f, 2, 8);
     }
 
     public void PlayProjectorBoot()
     {
-        PlayVoice(projectorBootClip, 0.90f, 1.0f);
-        PlayWarpSurge();
+        PlayVoice(projectorBootClip, 0.55f, 1.0f);
         PlayOpticsWhistle();
-        InjectEqualizerImpulse(1.0f, 0, 15);
+        InjectEqualizerImpulse(0.85f, 0, 15);
     }
 
     /// <summary>
@@ -316,8 +315,8 @@ public class HologramAudioSynthesizer : MonoBehaviour
     public void PlayWarpSurge()
     {
         if (warpSurgeClip == null && !isInitialized) InitializeAudio();
-        PlayVoice(warpSurgeClip, 0.95f, 1.0f);
-        InjectEqualizerImpulse(0.95f, 0, 4);
+        PlayVoice(warpSurgeClip, 0.30f, 1.0f);
+        InjectEqualizerImpulse(0.60f, 0, 4);
     }
 
     /// <summary>
@@ -329,8 +328,8 @@ public class HologramAudioSynthesizer : MonoBehaviour
         if (powerDownClip == null && !isInitialized) InitializeAudio();
         if (powerDownClip != null)
         {
-            PlayVoice(powerDownClip, 0.92f, Random.Range(0.98f, 1.02f));
-            InjectEqualizerImpulse(0.95f, 0, 6);
+            PlayVoice(powerDownClip, 0.45f, Random.Range(0.98f, 1.02f));
+            InjectEqualizerImpulse(0.70f, 0, 6);
         }
     }
 
@@ -343,8 +342,8 @@ public class HologramAudioSynthesizer : MonoBehaviour
         if (opticsWhistleClip == null && !isInitialized) InitializeAudio();
         if (opticsWhistleClip != null)
         {
-            PlayVoice(opticsWhistleClip, 0.78f, Random.Range(0.97f, 1.03f));
-            InjectEqualizerImpulse(0.75f, 10, 15);
+            PlayVoice(opticsWhistleClip, 0.40f, Random.Range(0.97f, 1.03f));
+            InjectEqualizerImpulse(0.65f, 10, 15);
         }
     }
 
@@ -358,9 +357,9 @@ public class HologramAudioSynthesizer : MonoBehaviour
         if (neuralUplinkClip != null)
         {
             float pitch = Random.Range(0.95f, 1.08f);
-            float vol = Random.Range(0.35f, 0.60f) * ambienceVolume;
+            float vol = Random.Range(0.35f, 0.55f) * ambienceVolume;
             PlayVoice(neuralUplinkClip, vol, pitch);
-            InjectEqualizerImpulse(0.85f, 8, 15);
+            InjectEqualizerImpulse(0.65f, 8, 15);
         }
     }
 
@@ -373,36 +372,36 @@ public class HologramAudioSynthesizer : MonoBehaviour
         if (glitchStaticClip == null && !isInitialized) InitializeAudio();
         if (glitchStaticClip != null)
         {
-            PlayVoice(glitchStaticClip, 0.35f * ambienceVolume, Random.Range(0.96f, 1.04f));
-            InjectEqualizerImpulse(0.50f, 8, 14);
+            PlayVoice(glitchStaticClip, 0.25f * ambienceVolume, Random.Range(0.96f, 1.04f));
+            InjectEqualizerImpulse(0.40f, 8, 14);
         }
     }
 
     /// <summary>
     /// Plays Sub-Harmonic Bass Drop / Impact Thump SFX:
-    /// Punchy 35Hz sub-bass transient punch.
+    /// Subtle 35Hz sub-bass tone.
     /// </summary>
     public void PlaySubThump()
     {
         if (subThumpClip == null && !isInitialized) InitializeAudio();
         if (subThumpClip != null)
         {
-            PlayVoice(subThumpClip, 0.95f, Random.Range(0.97f, 1.03f));
-            InjectEqualizerImpulse(1.0f, 0, 3);
+            PlayVoice(subThumpClip, 0.25f, Random.Range(0.97f, 1.03f));
+            InjectEqualizerImpulse(0.50f, 0, 3);
         }
     }
 
     /// <summary>
     /// Plays Thermal Plasma Discharge SFX:
-    /// Crackling plasma filament sputtering with random micro-sparks.
+    /// Soft plasma filament sputtering with random micro-sparks.
     /// </summary>
     public void PlayThermalDischarge()
     {
         if (thermalDischargeClip == null && !isInitialized) InitializeAudio();
         if (thermalDischargeClip != null)
         {
-            PlayVoice(thermalDischargeClip, 0.88f, Random.Range(0.95f, 1.05f));
-            InjectEqualizerImpulse(0.85f, 6, 15);
+            PlayVoice(thermalDischargeClip, 0.25f, Random.Range(0.95f, 1.05f));
+            InjectEqualizerImpulse(0.50f, 6, 15);
         }
     }
 
@@ -411,7 +410,7 @@ public class HologramAudioSynthesizer : MonoBehaviour
     /// - Ch 0 (Cyan): E Major 9 chord shimmer (330Hz, 415Hz, 494Hz, 622Hz)
     /// - Ch 1 (Amber): D Major triad shimmer (293Hz, 370Hz, 440Hz)
     /// - Ch 2 (Red): F# Minor triad glitch chord (370Hz, 440Hz, 554Hz)
-    /// Layers the Sub-Harmonic Impact Thump and Thermal Plasma Discharge for maximum cinematic punch.
+    /// Clean, melodic, and pleasant UI feedback.
     /// </summary>
     public void PlayChannelChord(int channelIndex)
     {
@@ -421,13 +420,9 @@ public class HologramAudioSynthesizer : MonoBehaviour
         int idx = Mathf.Clamp(channelIndex, 0, channelChordClips.Length - 1);
         if (channelChordClips[idx] != null)
         {
-            PlayVoice(channelChordClips[idx], 0.88f, 1.0f);
-            InjectEqualizerImpulse(0.90f, 3, 10);
+            PlayVoice(channelChordClips[idx], 0.45f, 1.0f);
+            InjectEqualizerImpulse(0.65f, 3, 10);
         }
-
-        // Layer Sub-Harmonic Bass Drop and Thermal Plasma Discharge for maximum cinematic punch
-        PlaySubThump();
-        PlayThermalDischarge();
     }
 
     /// <summary>
@@ -438,8 +433,8 @@ public class HologramAudioSynthesizer : MonoBehaviour
         if (arcDischargeClip == null && !isInitialized) InitializeAudio();
         if (arcDischargeClip != null)
         {
-            PlayVoice(arcDischargeClip, 0.82f, Random.Range(0.95f, 1.06f));
-            InjectEqualizerImpulse(0.85f, 7, 15);
+            PlayVoice(arcDischargeClip, 0.25f, Random.Range(0.95f, 1.06f));
+            InjectEqualizerImpulse(0.50f, 7, 15);
         }
     }
 
@@ -910,27 +905,19 @@ public class HologramAudioSynthesizer : MonoBehaviour
 
             case 2:
                 // Channel 2 (Red - Electronic Warfare Screen 03):
-                // Dominated by Combat Warning chirps, Voltage Spikes, Thermal Plasma crackles, Sub-Harmonic Thumps, and Encrypted Telemetry.
-                // Aggressive, high-energy electronic warfare feel with zero snare or noise blasts.
-                if (roll < 0.28f)
+                // Dominated by Combat Warning chirps, Voltage Spikes, and Encrypted Cipher Streams.
+                // High-energy electronic warfare feel with zero loud thumps, zaps, or noise blasts.
+                if (roll < 0.32f)
                 {
                     PlayVoltageSpike();
                 }
-                else if (roll < 0.52f)
+                else if (roll < 0.60f)
                 {
                     PlayWarningChirp();
                 }
-                else if (roll < 0.70f)
-                {
-                    PlayThermalDischarge();
-                }
-                else if (roll < 0.86f)
+                else if (roll < 0.82f)
                 {
                     PlayNeuralUplink();
-                }
-                else if (roll < 0.94f)
-                {
-                    PlaySubThump();
                 }
                 else
                 {

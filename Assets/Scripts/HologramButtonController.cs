@@ -342,12 +342,11 @@ public class HologramButtonController : MonoBehaviour
 
         Debug.Log($"[HologramButtonController] Activating Channel {index + 1}: {buttons[index].name}");
 
-        // Play procedural audio feedback: tactile pip + harmonic channel triad chord + electrical arc discharge
+        // Play procedural audio feedback: tactile button pip + harmonic channel triad chord
         if (audioSynthesizer != null)
         {
             audioSynthesizer.PlayButtonPress();
             audioSynthesizer.PlayChannelChord(buttons[index].channelIndex);
-            audioSynthesizer.PlayArcDischarge();
         }
 
         // Trigger mechanical depression, badge pulse, and dispatch OnButtonPressed event
