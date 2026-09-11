@@ -3,7 +3,7 @@
 [![Unity Version](https://img.shields.io/badge/Unity-6000.1.6f1-black.svg?style=flat&logo=unity)](https://unity.com/)
 [![Render Pipeline](https://img.shields.io/badge/Render%20Pipeline-URP%2017.1.0-blue.svg?style=flat)](https://unity.com/srp/Universal-Render-Pipeline)
 [![AR Engine](https://img.shields.io/badge/AR%20Engine-PTC%20Vuforia%2011.4.4-orange.svg?style=flat)](https://developer.vuforia.com/)
-[![Git LFS](https://img.shields.io/badge/Git%20LFS-Tracked-green.svg?style=flat)](https://git-lfs.github.com/)
+[![Git LFS](https://img.shields.io/badge/Git%20LFS-Tracked%20(178%20MB)-green.svg?style=flat)](https://git-lfs.github.com/)
 [![Self-Audit](https://img.shields.io/badge/Self--Audit-41%2F41%20Passed%20(100%25)-success.svg?style=flat)]()
 [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg?style=flat)](LICENSE)
 
@@ -101,7 +101,7 @@ The project includes an automated test runner (`Assets/Editor/HologramSelfAudit.
 ================================================================================
 === AR HOLOGRAM VIDEO MONITOR & VIRTUAL BUTTONS: COMPREHENSIVE SELF-AUDIT ===
 ================================================================================
-Audit Timestamp: 2026-09-11 13:54:54
+Audit Timestamp: 2026-09-11 14:02:21
 
 --- SECTION 1: ASSET, VIDEO & SHADER INTEGRITY ---
   [1.1] ImageTarget Texture (Assets/postcard.png): PASS (Found)
@@ -171,8 +171,11 @@ AR Virtual Buttons Video Player/
 ├── Assets/
 │   ├── Editor/
 │   │   ├── HologramSceneBuilder.cs       # Procedural scene construction & wiring tool
+│   │   ├── HologramSceneUpdater.cs       # Scene hierarchy updater & maintenance utility
 │   │   ├── HologramSelfAudit.cs          # 41-check automated self-audit verification suite
-│   │   └── HologramSelfAuditReport.txt   # Latest comprehensive audit report (100% pass)
+│   │   ├── HologramSelfAuditReport.txt   # Latest comprehensive audit report (100% pass)
+│   │   ├── ShaderVerificationHook.cs     # URP HLSL shader & material verification utility
+│   │   └── ShaderVerificationReport.txt  # Shader compilation & material verification report
 │   ├── Materials/
 │   │   ├── Mat_HologramScreen.mat        # Borderless luma transparency screen material
 │   │   ├── Mat_HologramEmitterRing.mat   # Additive base projector mandala material
@@ -187,7 +190,8 @@ AR Virtual Buttons Video Player/
 │   │   ├── HologramButtonController.cs   # Virtual button events, optical occlusion, conduits
 │   │   ├── HologramMonitorDisplay.cs     # 24cm widescreen hover, 16-band EQ, HUD telemetry
 │   │   ├── HologramVideoController.cs    # 3-channel silent video switcher & crossfader
-│   │   └── HologramAudioSynthesizer.cs   # 100% procedural multi-voice sci-fi audio engine
+│   │   ├── HologramAudioSynthesizer.cs   # 100% procedural multi-voice sci-fi audio engine
+│   │   └── HologramDiagnosticHUD.cs      # Real-time on-screen diagnostic HUD (press 'H' to toggle)
 │   ├── Shaders/
 │   │   ├── HologramScreen.shader         # Borderless URP HLSL hologram display shader
 │   │   ├── HologramEmitterRing.shader    # Additive concentric ring mandala shader
@@ -248,14 +252,17 @@ git lfs pull
 3. Click **Play** in Unity.
 4. Point your webcam at the `postcard.png` marker.
 5. **Touch the virtual buttons** with your physical finger on the paper, or **click them with your mouse** in the Game view to switch channels!
+6. Press **H** at any time to toggle the live on-screen diagnostic HUD overlay.
 
 ---
 
 ## Editor Utilities
 
-The project includes custom top-menu editor tools:
-* **Hologram Monitor &rarr; Run Full Self-Audit**: Runs the comprehensive 41-check test suite and generates `Assets/Editor/HologramSelfAuditReport.txt`.
-* **Hologram Monitor &rarr; Rebuild Complete Hologram Monitor Scene**: Automatically provisions and wires the complete scene hierarchy from scratch.
+The project includes custom top-menu editor tools accessible under **`AR Hologram`**:
+* **AR Hologram &rarr; Run Self Audit**: Runs the comprehensive 41-check test suite and generates `Assets/Editor/HologramSelfAuditReport.txt`.
+* **AR Hologram &rarr; Build Hologram Video Scene**: Automatically provisions and wires the complete scene hierarchy from scratch.
+* **AR Hologram &rarr; Apply Scene Fixes and Audit**: Applies scene geometric refinements and triggers immediate audit validation.
+* **AR Hologram &rarr; Verify Hologram Shader & Material**: Validates all HLSL shaders and material parameters, generating `Assets/Editor/ShaderVerificationReport.txt`.
 
 ---
 
